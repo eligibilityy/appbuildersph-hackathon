@@ -132,5 +132,20 @@ class TestRealModelSyntheticGlasses(unittest.TestCase):
             self.engine.enroll("Thomas", None, self.glasses)
 
 
+    def test_head_pose_sign_from_real_landmarks(self):
+        """Mirroring a photo must flip the yaw sign, and a face that's turned to its own right
+        (Joey, top right of t1.jpg, looking toward the left of the picture) must read negative."""
+        tom = self.plain[1]
+        a = self.engine.check_frame(tom)["pose"]["yaw"]
+        b = self.engine.check_frame(cv2.flip(tom, 1).copy())["pose"]["yaw"]
+        self.assertAlmostEqual(a, -b, delta=0.05)
+        group = cv2.imread(str(IMAGES / "t1.jpg"))
+        from faces import quality
+        joey = min(self.engine.detect(group), key=lambda f: f.bbox[1])  # the topmost face in the photo
+        yaw = quality.metrics(joey, group)["yaw"]
+        self.assertLess(yaw, -0.15)
+        print(f"\n  [measured] yaw: Tom {a:+.2f}, mirrored Tom {b:+.2f}, Joey (turned to his right) {yaw:+.2f}")
+
+
 if __name__ == "__main__":
     unittest.main()

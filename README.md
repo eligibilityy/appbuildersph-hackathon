@@ -218,20 +218,35 @@ Then open Chrome:
 
 | Page | URL | What it's for |
 |---|---|---|
-| Enroll | http://localhost:3000/enroll | Add a person: name + relationship + 5 guided photos |
-| Patient view | http://localhost:3000/ | Full-screen camera, boxes + names, big name card, "Who's this?" button (or spacebar) |
+| Enroll | http://localhost:3000/enroll | Add a person: name, relationship, optional description, then an automatic guided face scan (no photo button) |
+| Patient view | http://localhost:3000/ | Full-screen camera, floating name tags (tap one for a profile card), big name card, "Who's this?" button (or spacebar) |
 | Caregiver | http://localhost:3000/caregiver | List of people, name the "Unknown #N" faces, delete people |
 
 Stop either one with **Ctrl+C**. Stage demo: `chrome --app=http://localhost:3000` (or `--kiosk`).
 
 ### Quick test
 
-1. Enroll yourself at `/enroll`.
-2. Open `/`: a **green** box with your name should appear within about a second.
-3. Have someone who isn't enrolled step in: grey "…" first, then **amber** "Unknown #1".
-4. Open `/caregiver`, type their name, Save, and they turn green on the patient view.
+1. Enroll yourself at `/enroll`: type your name, press **Start face scan**, and follow the prompts (look straight, turn slightly left, then right, then smile). Photos are taken by themselves, and it saves when done.
+2. Open `/`: a cyan scan appears on your face, then your **name tag** above your head. Tap it to see your profile card.
+3. Have someone who isn't enrolled step in: a brief scan, then only a faint outline. No name is shown; they're saved as "Unknown #1" on `/caregiver`.
+4. Open `/caregiver` and name them; their name tag then appears on the patient view.
 
 To start from a clean slate, stop the server and delete the `server/data/` folder.
+
+### Face enrollment and name tags: how they work
+
+- **Automatic enrollment.** Nothing runs until the caregiver presses **Start face scan**, and the camera turns off again when the scan ends or is cancelled. About 5 times a second the page sends one frame to `/enroll/check` (local InsightFace). A photo is taken only when all of these hold:
+  - exactly one face is in view, big enough and centred;
+  - it passes the quality gate (light, blur, size);
+  - the **head pose from the face landmarks** matches the current step;
+  - the face has been steady for 3 checks in a row;
+  - it isn't a near-copy of a photo already taken.
+
+  The accepted photo is the exact frame the server checked. Steps: straight → slightly left → back to centre → slightly right → straight and smile (plus 2 with glasses switched, if ticked). Then it saves automatically. If the face or name is already saved, it asks the caregiver what to do instead of creating a second person.
+- **Head pose** is a 2-D estimate from 5 landmarks (where the nose sits between the eyes), not from the face box. Checked on the real model: mirroring a photo flips its sign, and a face turned to its own right reads negative. How well it follows real head turns on a webcam still needs testing with people.
+- **Near-copy check:** a 16×16 grey thumbnail of the face, compared in the browser. Measured on the detector's crops: re-encoded, shifted or brighter copies differ by 0.03–0.06; a 6° head tilt by 0.22; glasses by 0.31. Threshold: 0.12.
+- **Patient view.** A face the server hasn't confirmed yet gets a slow cyan scan, with no name. A face saved as Unknown gets only a faint outline. A confirmed person gets a name tag. Tapping it (or Tab, then Enter) opens a profile card with their saved name, relationship, description ("No description added yet." if empty), last finished visit and remembered facts. No boxes are drawn. With the OS "reduce motion" setting, the scans don't move.
+- **Description** is optional everywhere: at enrollment, on the completion screen, from the profile card, and in the caregiver's Edit dialog. It's stored in the existing `people.notes` column (no database migration), and editing it never touches face data.
 
 ---
 
@@ -255,8 +270,9 @@ server/
   faces/             CORE: face recognition
     engine.py          model load, detect/embed, gallery + matching, enroll / add photos / merge
     tracker.py         follows faces across frames, confirms identity, creates "Unknown #N"
-    quality.py         is this face good enough to trust? (stub)
-    routes.py          /enroll, /people/{id}/photos, /people/{id}/merge
+    quality.py         is this face good enough to trust? size, light, blur, head pose from landmarks
+    routes.py          /enroll, /enroll/check (live guidance), /people/{id}/photos, /people/{id}/merge
+  tests/             face unit tests (fake detector) + real-model tests (synthetic glasses)
   visits.py          visit start/end, "last seen", spoken brief text (stub)
   tts.py             Piper text-to-speech (stub)
   audio.py           mic audio -> Whisper transcripts (stub)
@@ -277,14 +293,19 @@ web/src/
   app/caregiver/page.tsx       Caregiver dashboard (/caregiver)
   components/ui/               shadcn/ui components (button, card, dialog, select, ...), tuned for 44px targets
   components/app/              AppHeader (top nav), ConnectionStatus (server online chip)
-  components/CameraCapture.tsx Guided photo capture, used by enroll and "Add photos"
-  components/FaceOverlay.tsx   Video + face boxes and names
+  components/CameraCapture.tsx Manual guided photo capture, used by "Add photos"
+  components/AutoEnrollCamera.tsx  Hands-free enrollment camera + holographic scan overlay
+  components/FaceOverlay.tsx   Video + scan visuals + clickable name tags (no boxes)
   components/NameCard.tsx      Big name card
-  components/patient/          WhoButton, CameraErrorCard
+  components/patient/          WhoButton, CameraErrorCard, PersonProfileCard (opened from a name tag)
   components/caregiver/        PersonCard, MergeControl, AddPhotosDialog, EditPersonDialog
   lib/api.ts                   Typed REST calls (people, enroll, addPhotos, merge, ...)
   lib/server.ts                Server URL, WebSocket hook with auto-reconnect, shared types
-  lib/camera.ts                Webcam hook + frame grabbing
+  lib/camera.ts                Webcam hook (on/off) + frame grabbing + face thumbnail for the near-copy check
+  lib/autoCapture.ts           Auto-enrollment state machine (pure, unit-tested); tunables in RULES
+  lib/nameTags.ts              Name tag + scan layout and animation (pure, unit-tested)
+  lib/holo.ts                  Holographic canvas drawing (scan line, oval, progress, turn arrows)
+  lib/profile.ts               What the profile card shows (only saved data)
   lib/audio.ts                 Plays the spoken brief; mic capture goes here later
   lib/format.ts                "5 min ago", initials
 
@@ -307,7 +328,13 @@ $env:FEATURE_AUDIO = "0"; $env:FEATURE_MEMORY = "0"   # also FEATURE_TTS, FEATUR
 cd server
 .\.venv\Scripts\python tools\smoke_test.py      # macOS/Linux: .venv/bin/python tools/smoke_test.py
 ```
-It starts its own server on port 8765 with a throwaway data folder, so your real `server/data` is untouched. It uses InsightFace's bundled sample photos, so no real faces are involved. It checks enrollment, live recognition, Unknown creation, add photos, merge, edit, delete, and restart persistence. Expect `ALL PASSED`.
+It starts its own server on port 8765 with a throwaway data folder, so your real `server/data` is untouched. It uses InsightFace's bundled sample photos, so no real faces are involved. It checks enrollment, duplicate refusal, live recognition, Unknown creation, add photos, merge, edit, delete, and restart persistence. Expect `ALL PASSED`.
+
+Face unit tests and web tests (also no real faces):
+```powershell
+cd server; .\.venv\Scripts\python -m unittest discover -s tests   # 43 tests
+cd ..\web; npm test                                              # 32 tests: auto-capture, name tags, profile card
+```
 
 ### Server API (so far)
 
@@ -315,11 +342,12 @@ It starts its own server on port 8765 with a throwaway data folder, so your real
 |---|---|---|
 | WS | `/ws` | Browser sends `{type:"frame", jpeg}`; server replies `{type:"faces", faces:[...]}` and broadcasts `memory_updated` |
 | GET | `/health` | Server status, number of people and embeddings |
-| POST | `/enroll` | multipart: `name`, `relationship`, 3–5 `images` (each must contain exactly one face) |
-| POST | `/people/{id}/photos` | multipart: 1–5 `images`. Adds photos to someone already known (e.g. now wearing glasses) |
+| POST | `/enroll` | multipart: `name`, `relationship`, optional `notes` (description), 3–8 `images` (one good face each). Returns **409** with `candidates` if the face or name is already saved; resend with `force=true` only if it's really a different person |
+| POST | `/enroll/check` | multipart: one `image`. Returns face count, box, quality reason, head pose (`yaw`, `pitch`) and "already saved as…". Saves nothing; drives auto-capture |
+| POST | `/people/{id}/photos` | multipart: 1–8 `images`. Adds photos to someone already known (e.g. now wearing glasses) |
 | POST | `/people/{id}/merge` | JSON `{into_person_id}`. "Unknown #3 is actually Miguel": moves their faces, visits and facts, then deletes the Unknown |
 | GET | `/people` · `/people/{id}` | List people / one person with visits + facts |
-| PATCH | `/people/{id}` | JSON `{name, relationship, notes}`; naming an unknown makes them known |
+| PATCH | `/people/{id}` | JSON `{name, relationship, notes}`; `notes` is the optional description (`null` clears it). Naming an unknown makes them known |
 | DELETE | `/people/{id}` | Delete a person and everything about them |
 | GET | `/visits?person_id=` | Visit history |
 | GET | `/thumbs/{id}.jpg` | Face thumbnail |
@@ -330,7 +358,10 @@ The full message protocol for upcoming milestones is in `CLAUDE.md`.
 
 | Setting | Default | Change it if… |
 |---|---|---|
-| `MATCH_THRESHOLD` | 0.45 | People get mixed up → raise it. Known people show as unknown → lower it. |
+| `MATCH_THRESHOLD` | 0.45 | People get mixed up → raise it. Known people show as unknown → lower it (measure with `tools/eval_faces.py` first). |
+| `MATCH_MARGIN` | 0.08 | The best person must beat the 2nd-best by this much, otherwise no name is shown. |
+| `FACE_DET_SIZE` | (480, 480) | Detection too slow on the demo laptop → (320, 320), but faces with glasses are missed more often. |
+| `RULES` in `web/src/lib/autoCapture.ts` | — | Auto-capture: how steady (`STABLE_FRAMES`), how centred and large, how far to turn (`TURN_MIN_YAW`). |
 | `CONFIRM_FRAMES` | 5 | Names take too long to appear → lower it. |
 | `UNKNOWN_MIN_FACE_PX` | 60 | Strangers far from the camera never get saved → lower it. |
 | `VISIT_END_SECONDS` | 30 | For the stage demo, set the env var `VISIT_END_SECONDS=10`. |

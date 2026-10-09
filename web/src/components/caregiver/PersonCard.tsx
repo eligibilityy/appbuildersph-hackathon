@@ -111,6 +111,12 @@ export default function PersonCard({ p, version, knownPeople, onChanged }: Props
         </DropdownMenu>
       </div>
 
+      {!unknown && p.notes?.trim() && (
+        <p className="line-clamp-2 text-body text-muted-foreground" title={p.notes}>
+          {p.notes}
+        </p>
+      )}
+
       {p.name_source === "auto" && (
         <p className="rounded-lg bg-primary/5 px-3 py-2 text-footnote text-muted-foreground">
           Name picked up from a conversation.{" "}

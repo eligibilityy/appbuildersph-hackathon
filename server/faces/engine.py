@@ -48,12 +48,12 @@ def add_embeddings(person_id: int, embs: list[np.ndarray]):
         )
 
 
-def create_person_with_embeddings(name, relationship, is_unknown, name_source, embs) -> int:
+def create_person_with_embeddings(name, relationship, is_unknown, name_source, embs, notes=None) -> int:
     """Person row + all their embeddings in ONE transaction, so a failure never leaves a face-less person."""
     with db.connect() as c:
         cur = c.execute(
-            "INSERT INTO people (name, relationship, is_unknown, name_source, created_at) VALUES (?,?,?,?,?)",
-            (name, relationship, int(is_unknown), name_source, db.now()),
+            "INSERT INTO people (name, relationship, notes, is_unknown, name_source, created_at) VALUES (?,?,?,?,?,?)",
+            (name, relationship, notes, int(is_unknown), name_source, db.now()),
         )
         pid = cur.lastrowid
         c.executemany(
@@ -231,9 +231,15 @@ class FaceEngine:
         return out
 
     def check_frame(self, img_bgr) -> dict:
-        """Live enrollment guidance: is there exactly one usable face? Does it look like someone saved?"""
+        """Live enrollment guidance: is there exactly one usable face? Does it look like someone saved?
+        `pose` is a 2-D estimate from the 5 detected landmarks (not from the box), used to guide head turns:
+          yaw    nose offset from the eye midpoint / eye distance. ~0 = facing the camera,
+                 > 0 = turned to the person's OWN left, < 0 = to their own right (in the unmirrored frame).
+          pitch  nose height between the eyes (0) and the mouth (1); ~0.5-0.7 when level."""
         faces = self.detect(img_bgr)
-        res = {"faces": len(faces), "ok": False, "reason": None, "box": None, "match": None}
+        h, w = img_bgr.shape[:2]
+        res = {"faces": len(faces), "ok": False, "reason": None, "box": None, "match": None,
+               "pose": None, "frame": [w, h]}
         if len(faces) == 0:
             res["reason"] = "No face found"
             return res
@@ -242,6 +248,9 @@ class FaceEngine:
             return res
         f = faces[0]
         res["box"] = [round(float(v), 1) for v in f.bbox]
+        m = quality.metrics(f, img_bgr)
+        if "yaw" in m:
+            res["pose"] = {"yaw": round(m["yaw"], 3), "pitch": round(m["pitch"], 3)}
         res["reason"] = quality.check(f, img_bgr, strict=True)
         res["ok"] = res["reason"] is None
         with self.state_lock:
@@ -281,7 +290,8 @@ class FaceEngine:
 
     # --- enrollment / corrections ---
 
-    def enroll(self, name: str, relationship: str | None, images_bgr: list, force: bool = False) -> int:
+    def enroll(self, name: str, relationship: str | None, images_bgr: list, force: bool = False,
+               notes: str | None = None) -> int:
         """One request -> exactly one person with all of its photos' embeddings, or nothing at all."""
         embedded = self._embed_all(images_bgr)  # validate every image before writing anything
         embs = [e for e, _ in embedded]
@@ -294,7 +304,7 @@ class FaceEngine:
                     print(f"[faces] enrollment of {name!r} blocked: {what} person {d['id']} "
                           f"(score {d['score']:.3f})")
                     raise DuplicateError(f"This person {what} {d['name']}, who is already saved.", dups)
-            pid = create_person_with_embeddings(name, relationship, False, "enrolled", embs)
+            pid = create_person_with_embeddings(name, relationship, False, "enrolled", embs, notes)
             self.reload()
         save_thumb(images_bgr[0], embedded[0][1], pid)
         print(f"[faces] enrolled person {pid} with {len(embs)} photos" + (" (duplicate check overridden)" if force else ""))

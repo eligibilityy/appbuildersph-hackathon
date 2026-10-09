@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import ConnectionStatus from "@/components/app/ConnectionStatus";
-import FaceOverlay from "@/components/FaceOverlay";
+import FaceOverlay, { TagAnchor } from "@/components/FaceOverlay";
 import NameCard from "@/components/NameCard";
 import CameraErrorCard from "@/components/patient/CameraErrorCard";
+import PersonProfileCard from "@/components/patient/PersonProfileCard";
 import WhoButton from "@/components/patient/WhoButton";
 import { playSpeech } from "@/lib/audio";
 import { grabFrame, useCamera } from "@/lib/camera";
@@ -12,6 +13,7 @@ import { FaceBox, ServerEvent, useServerSocket } from "@/lib/server";
 
 const FPS = 5;
 const CARD_HOLD_MS = 3000; // keep the name card up briefly after the face drops out, to avoid flicker
+const PROFILE_HOLD_MS = 8000; // close an open profile card once its person has been out of view this long
 
 type Card = { name: string; relationship: string | null };
 
@@ -22,12 +24,19 @@ export default function PatientView() {
   const [faces, setFaces] = useState<FaceBox[]>([]);
   const [card, setCard] = useState<Card | null>(null);
   const cardSeenAt = useRef(0);
+  const [selected, setSelected] = useState<{ personId: number; anchor: TagAnchor } | null>(null);
+  const [profileVersion, setProfileVersion] = useState(0);
+  const seenAt = useRef(new Map<number, number>()); // person_id -> last time a confirmed face was in view
+  const selectedRef = useRef<number | null>(null);
+  selectedRef.current = selected?.personId ?? null;
 
   const camError = useCamera(videoRef);
 
   const onEvent = useCallback((e: ServerEvent) => {
     if (e.type === "faces") {
       setFaces(e.faces);
+      const now = Date.now();
+      for (const f of e.faces) if (f.person_id !== null && !f.is_unknown) seenAt.current.set(f.person_id, now);
       // Name card: the largest confirmed, known face.
       const known = e.faces
         .filter((f) => f.person_id !== null && !f.is_unknown && f.name)
@@ -42,6 +51,8 @@ export default function PatientView() {
       }
     } else if (e.type === "speak" && e.audio_url) {
       playSpeech(e.audio_url);
+    } else if (e.type === "memory_updated" && e.person_id === selectedRef.current) {
+      setProfileVersion((v) => v + 1); // edited, merged or deleted elsewhere: refresh the open card
     }
   }, []);
 
@@ -63,13 +74,20 @@ export default function PatientView() {
     return () => clearInterval(id);
   }, [wsRef]);
 
-  // Hide the card once nobody known has been seen for a moment.
+  // Hide the card once nobody known has been seen for a moment; close a profile whose person has left.
   useEffect(() => {
     const id = setInterval(() => {
       if (Date.now() - cardSeenAt.current > CARD_HOLD_MS) setCard(null);
+      const sel = selectedRef.current;
+      if (sel !== null && Date.now() - (seenAt.current.get(sel) ?? 0) > PROFILE_HOLD_MS) setSelected(null);
     }, 500);
     return () => clearInterval(id);
   }, []);
+
+  const selectPerson = useCallback((personId: number, anchor: TagAnchor) => {
+    setSelected((s) => (s?.personId === personId ? null : { personId, anchor }));
+  }, []);
+  const closeProfile = useCallback(() => setSelected(null), []);
 
   const replay = useCallback(() => {
     const ws = wsRef.current;
@@ -79,6 +97,9 @@ export default function PatientView() {
   // Spacebar = "Who's this?"
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      // Leave Space alone in text fields, on focused buttons (name tags) and inside dialogs.
+      if (t?.closest?.("input, textarea, select, button, [contenteditable], [role=dialog]")) return;
       if (e.code === "Space") {
         e.preventDefault();
         replay();
@@ -90,7 +111,22 @@ export default function PatientView() {
 
   return (
     <main className="fixed inset-0 select-none overflow-hidden bg-black text-white">
-      <FaceOverlay videoRef={videoRef} faces={faces} frameSize={frameSize} />
+      <FaceOverlay
+        videoRef={videoRef}
+        faces={faces}
+        frameSize={frameSize}
+        selectedPersonId={selected?.personId ?? null}
+        onSelectPerson={selectPerson}
+      />
+      {selected && (
+        <PersonProfileCard
+          key={selected.personId}
+          personId={selected.personId}
+          anchor={selected.anchor}
+          version={profileVersion}
+          onClose={closeProfile}
+        />
+      )}
 
       <ConnectionStatus online={connected} className="absolute left-4 top-4" />
 
