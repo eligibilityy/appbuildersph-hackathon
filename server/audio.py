@@ -32,11 +32,19 @@ def _get_model():
             if _whisper is None:
                 from faster_whisper import WhisperModel
 
-                _whisper = WhisperModel(
-                    config.WHISPER_MODEL,
-                    device=config.WHISPER_DEVICE,
-                    compute_type=config.WHISPER_COMPUTE_TYPE,
-                )
+                try:
+                    _whisper = WhisperModel(
+                        config.WHISPER_MODEL,
+                        device=config.WHISPER_DEVICE,
+                        compute_type=config.WHISPER_COMPUTE_TYPE,
+                    )
+                except Exception as e:
+                    if "offline" in str(e).lower() or type(e).__name__ == "LocalEntryNotFoundError":
+                        raise RuntimeError(
+                            f"Whisper '{config.WHISPER_MODEL}' isn't downloaded (the server runs offline). With internet "
+                            f"on, run the Whisper download command in README > Models for '{config.WHISPER_MODEL}'."
+                        ) from e
+                    raise
     return _whisper
 
 

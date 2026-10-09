@@ -147,11 +147,11 @@ Run these from the `server` folder with internet on. macOS/Linux: use `.venv/bin
 ```
 This saves `en_US-lessac-medium.onnx` and `en_US-lessac-medium.onnx.json` into `models/`.
 
-**Whisper:** the server runs in offline mode, so download ahead of time:
+**Whisper:** the server runs in offline mode, so download ahead of time. The app uses `base` by default:
 ```powershell
-.\.venv\Scripts\python -c "import os; os.environ['HF_HUB_OFFLINE']='0'; from faster_whisper import WhisperModel; WhisperModel('small', device='cpu', compute_type='int8')"
+.\.venv\Scripts\python -c "import os; os.environ['HF_HUB_OFFLINE']='0'; from faster_whisper import WhisperModel; WhisperModel('base', device='cpu', compute_type='int8')"
 ```
-The application defaults to `base`. Set `WHISPER_MODEL=small` for better accuracy if the laptop has extra disk space.
+Optional, more accurate on Taglish but slower: run the same command with `'small'`, then start the server with `$env:WHISPER_MODEL = "small"`. If the server says Whisper "isn't downloaded" (or mentions `HF_HUB_OFFLINE`), the model named in `WHISPER_MODEL` is missing: run the command above for it.
 
 **Ollama + LLM:** install Ollama from https://ollama.com/download, then:
 ```powershell
