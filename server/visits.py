@@ -14,6 +14,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter
 
 import db
+import config
 import people
 
 router = APIRouter()
@@ -24,6 +25,8 @@ _active_monitoring: dict[int, str] = {}
 _APPEARANCE_WRITE_INTERVAL = 10.0
 _MONITORING_HEARTBEAT_SECONDS = 15.0
 _last_monitoring_heartbeat: dict[int, float] = {}
+_visit_lock = threading.Lock()
+_last_seen_mono: dict[int, float] = {}
 
 
 def update(present_ids: set[int]) -> list[dict]:
@@ -34,7 +37,49 @@ def update(present_ids: set[int]) -> list[dict]:
       {"type": "speak", "text": "...", "audio_url": "/tts/abc.wav"}
       {"type": "visit_end", "visit_id": 1, "person_id": 2}
     """
-    return []
+    import memory
+    now = datetime.now(timezone.utc)
+    now_text = db.as_utc(now)
+    mono = time.monotonic()
+    events = []
+    speak_ids = []
+    finished_ids = []
+    with _visit_lock:
+        with db.connect() as c:
+            rows = c.execute("SELECT id, person_id, started_at FROM visits WHERE ended_at IS NULL").fetchall()
+            open_by_person = {int(row["person_id"]): dict(row) for row in rows}
+            for person_id in present_ids:
+                row = open_by_person.get(person_id)
+                if row:
+                    _last_seen_mono[int(row["id"])] = mono
+                    continue
+                cur = c.execute(
+                    "INSERT INTO visits (person_id, started_at) VALUES (?, ?)",
+                    (person_id, now_text),
+                )
+                visit_id = int(cur.lastrowid)
+                _last_seen_mono[visit_id] = mono
+                events.append({"type": "visit_start", "visit_id": visit_id, "person_id": person_id})
+                speak_ids.append(person_id)
+
+            for row in rows:
+                visit_id = int(row["id"])
+                person_id = int(row["person_id"])
+                if person_id in present_ids:
+                    continue
+                last_seen = _last_seen_mono.setdefault(visit_id, mono)
+                if mono - last_seen < config.VISIT_END_SECONDS:
+                    continue
+                c.execute("UPDATE visits SET ended_at = ? WHERE id = ? AND ended_at IS NULL", (now_text, visit_id))
+                _last_seen_mono.pop(visit_id, None)
+                events.append({"type": "visit_end", "visit_id": visit_id, "person_id": person_id})
+                finished_ids.append(visit_id)
+
+    for person_id in speak_ids:
+        threading.Thread(target=_speak_person, args=(person_id,), name="piper-brief", daemon=True).start()
+    for visit_id in finished_ids:
+        memory.enqueue(visit_id)
+    return events
 
 
 def record_confirmed_appearances(person_ids: set[int], observed_at: str | None = None) -> list[int]:
@@ -173,12 +218,51 @@ def appearance_history(person_id: int, at: datetime | None = None):
 
 def open_visit_ids() -> list[int]:
     """Visits currently open. audio.py appends transcribed text to all of them."""
-    return []
+    with db.connect() as c:
+        rows = c.execute("SELECT id FROM visits WHERE ended_at IS NULL").fetchall()
+    return [int(row["id"]) for row in rows]
+
+
+def append_transcript(visit_ids: set[int], text: str) -> list[int]:
+    """Append recognized speech to targeted visits that are still open; return IDs updated."""
+    if not visit_ids or not text.strip():
+        return []
+    updated = []
+    with db.connect() as c:
+        for visit_id in visit_ids:
+            row = c.execute("SELECT transcript FROM visits WHERE id = ? AND ended_at IS NULL", (visit_id,)).fetchone()
+            if row is None:
+                continue
+            transcript = " ".join(part for part in (row["transcript"], text.strip()) if part)
+            c.execute("UPDATE visits SET transcript = ? WHERE id = ? AND ended_at IS NULL", (transcript, visit_id))
+            updated.append(visit_id)
+    return updated
 
 
 def replay_brief() -> list[dict]:
     """'Who's this?' button / spacebar: repeat the brief for whoever is in view."""
+    with db.connect() as c:
+        rows = c.execute("SELECT DISTINCT person_id FROM visits WHERE ended_at IS NULL").fetchall()
+    for row in rows:
+        threading.Thread(target=_speak_person, args=(int(row["person_id"]),), name="piper-replay", daemon=True).start()
     return []
+
+
+def _speak_person(person_id: int) -> None:
+    """Synthesize away from the camera loop, then broadcast the playable clip URL."""
+    import hub
+    import tts
+
+    text = brief_text(person_id)
+    if not text:
+        return
+    try:
+        audio_url = tts.speak(text)
+    except Exception as exc:
+        print(f"[visits] couldn't synthesize brief for person {person_id}: {exc!r}", flush=True)
+        return
+    if audio_url:
+        hub.broadcast_threadsafe({"type": "speak", "text": text, "audio_url": audio_url})
 
 
 def brief_text(person_id: int) -> str | None:
