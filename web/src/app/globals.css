@@ -71,7 +71,7 @@
   --secondary: #ececf0;
   --secondary-foreground: #1d1d1f;
   --muted: #f2f2f5;
-  --muted-foreground: #6e6e73;      /* secondary label */
+  --muted-foreground: #5a5a60;      /* secondary label (a touch darker: stays readable on the tinted gradients) */
   --tertiary-foreground: #a1a1a6;   /* tertiary label */
   --accent: #f2f2f5;
   --accent-foreground: #1d1d1f;
@@ -95,6 +95,12 @@
   --sidebar-accent-foreground: #1d1d1f;
   --sidebar-border: rgb(0 0 0 / 0.08);
   --sidebar-ring: #007aff;
+  /* Crouie brand + gradients. Sky = caregiver pages (bright blue fading to white);
+     dusk = patient view (deep navy through periwinkle to warm cream: calm, low glare). */
+  --brand-sky: #58b2fe;             /* the logo's blue */
+  --gradient-sky: linear-gradient(180deg, #1f8fff 0px, #45b6ff 64px, #9fd6ff 150px, #dcefff 250px, var(--background) 400px);
+  --gradient-dusk: linear-gradient(180deg, #0c1730 0%, #18305e 16%, #3f629a 36%, #8aa6cf 56%, #c9d8ea 72%, #f4efe1 88%, #f8f5ef 100%);
+  --gradient-primary: linear-gradient(180deg, #1a84ff 0%, #0062e0 100%);
 }
 
 /* Dark theme: kept from shadcn defaults, not designed yet (the app is light-first). */
@@ -163,6 +169,16 @@
   line-height: 18px;
 }
 
+/* Patient view background: the dusk sky. */
+@utility bg-dusk {
+  background: var(--gradient-dusk);
+}
+/* Primary call-to-action fill: a soft vertical blue gradient with a light top edge. */
+@utility bg-primary-gradient {
+  background-image: var(--gradient-primary);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.28), 0 8px 20px -10px rgb(0 98 224 / 0.6);
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -174,6 +190,10 @@
   }
   body {
     @apply bg-background text-foreground;
+    /* The sky gradient sits behind the top of every caregiver page and scrolls away with it. */
+    background-image: var(--gradient-sky);
+    background-repeat: no-repeat;
+    background-size: 100% 400px;
   }
   button:not(:disabled), [role="button"]:not(:disabled) {
     cursor: pointer;
