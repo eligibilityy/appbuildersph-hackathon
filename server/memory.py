@@ -196,18 +196,27 @@ def repair(text: str | None, transcript: str, name: str | None) -> str | None:
 
 
 def fix_proper_nouns(text: str | None, transcript: str) -> str | None:
-    """Same slip, other shape: a name or place comes out misspelled ("Bagungio", "C.ceb"). Swap a capitalized
-    word that isn't in the transcript for the very close capitalized transcript word with the same first letter."""
+    """Same slip, other shape: a name or place comes out misspelled ("Bagungio", "Baguong", "C.ceb", "B: GC").
+    Swap a capitalized word that isn't in the transcript for the close capitalized transcript word with the same
+    first letter (similarity >= 0.75: "Baguong" -> "Baguio" is 0.77, while "December"/"Disyembre" is 0.59)."""
     if not text:
         return text
     said = {w.lower(): w for w in re.findall(r"\b[A-Z][A-Za-z]{2,}\b", transcript)}
+    # a word split by a colon: "B: GC" -> "BGC", only when the joined word was said
+    text = re.sub(r"\b([A-Za-z]{1,3}):\s?([A-Za-z]{1,6})\b",
+                  lambda m: said.get((m.group(1) + m.group(2)).lower(), m.group(0)), text)
 
     def fix(m):
         word = m.group(0)
         core = re.sub(r"^[A-Za-z]\.", "", word)  # "C.ceb" -> "ceb"
         if core.lower() in said:
             return said[core.lower()] if core != word else word
-        near = difflib.get_close_matches(core.lower(), [w for w in said if w[0] == core[0].lower()], n=1, cutoff=0.84)
+        # a cut-off fragment glued to the full word: "Tagayttagaytay" -> "Tagaytay"
+        for low, full in said.items():
+            head = core.lower()[: -len(low)]
+            if len(core) > len(low) and core.lower().endswith(low) and low.startswith(head):
+                return full
+        near = difflib.get_close_matches(core.lower(), [w for w in said if w[0] == core[0].lower()], n=1, cutoff=0.75)
         return said[near[0]] if near else word
 
     return re.sub(r"\b[A-Z](?:\.[a-z]{2,}|[a-z]{2,})\b", fix, text)

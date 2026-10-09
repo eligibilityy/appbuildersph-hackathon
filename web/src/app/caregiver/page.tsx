@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { UserPlus, Users } from "lucide-react";
 import AppHeader from "@/components/app/AppHeader";
+import AskPanel from "@/components/caregiver/AskPanel";
 import PersonCard from "@/components/caregiver/PersonCard";
 import LiveCaptions, { useLiveCaptions } from "@/components/caregiver/LiveCaptions";
 import PersonDetail from "@/components/caregiver/PersonDetail";
@@ -101,7 +102,15 @@ export default function CaregiverPage() {
           </div>
           <div aria-live="polite">
             {detail ? (
-              <PersonDetail person={detail} version={version} onBack={closeDetail} />
+              <PersonDetail
+                person={detail}
+                version={version}
+                onBack={closeDetail}
+                onChanged={() => {
+                  loadDetail(detail.id);
+                  load();
+                }}
+              />
             ) : detailLoading ? (
               <DetailSkeleton />
             ) : (
@@ -146,6 +155,8 @@ export default function CaregiverPage() {
         <p className="sr-only" role="status">
           {connected ? "Live updates connected" : "Live updates disconnected"}
         </p>
+
+        {people !== null && <AskPanel people={known} version={version} onOpenPerson={openDetail} />}
 
         <LiveCaptions live={live} people={people} version={version} />
 

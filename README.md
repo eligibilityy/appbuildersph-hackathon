@@ -20,6 +20,7 @@ A camera recognizes the people who visit a patient with dementia, listens to the
 | Ollama/Qwen memory: summary + facts + auto-naming from introductions | ✅ done |
 | English, Taglish and Tagalog conversations understood (brief is spoken in English) | ✅ done, see [Languages](#languages) |
 | Caregiver dashboard: people, visit timeline, merge, add photos, edit, delete | ✅ done |
+| **Ask about your people** (local LLM answers from saved memories, spoken) + **Add a conversation** (typed backup for the mic) | ✅ done |
 | README final (measured performance on the demo laptop), demo video | ⏳ |
 
 ---
@@ -383,6 +384,8 @@ cd ..\web; npm test                                              # 32 tests: aut
 | POST | `/enroll` | multipart: `name`, `relationship`, optional `notes` (description), 3–8 `images` (one good face each). Returns **409** with `candidates` if the face or name is already saved; resend with `force=true` only if it's really a different person |
 | POST | `/enroll/check` | multipart: one `image`. Returns face count, box, quality reason, head pose (`yaw`, `pitch`) and "already saved as…". Saves nothing; drives auto-capture |
 | POST | `/people/{id}/photos` | multipart: 1–8 `images`. Adds photos to someone already known (e.g. now wearing glasses) |
+| POST | `/ask` | JSON `{question}` (English/Taglish/Tagalog). The local LLM answers from saved memories only ("I don't remember that." otherwise). Returns `{answer, person_ids, llm_seconds, model, audio_url}` |
+| POST | `/people/{id}/conversations` | JSON `{transcript}`. Remembers a typed/pasted conversation as a visit: summary, facts, auto-name for an Unknown. Returns them plus `brief` (what the app will say next time) |
 | POST | `/people/{id}/merge` | JSON `{into_person_id}`. "Unknown #3 is actually Miguel": moves their faces, visits and facts, then deletes the Unknown |
 | GET | `/people` · `/people/{id}` | List people / one person with visits, facts, and hourly appearance history |
 | PATCH | `/people/{id}` | JSON `{name, relationship, notes}`; `notes` is the optional description (`null` clears it). Naming an unknown makes them known |
