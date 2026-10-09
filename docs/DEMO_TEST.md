@@ -40,7 +40,7 @@ ollama ps                                   # PROCESSOR column: is it 100% GPU?
 ```powershell
 cd appbuildersph-demo\server
 $env:DATA_DIR = "C:\memaid-demo"
-$env:VISIT_END_SECONDS = "10"
+$env:VISIT_END_SECONDS = "5"
 $env:PYTHONUNBUFFERED = "1"
 .\.venv\Scripts\python main.py 2>&1 | Tee-Object -FilePath C:\memaid-demo-log.txt
 ```
@@ -70,10 +70,12 @@ Allow the camera and microphone when asked. The patient view must say **Connecte
 | # | Do | Pass if |
 |---|---|---|
 | 1 | "Miguel" (not enrolled) walks in and faces the laptop from about 1 m | A neutral scan appears and **nothing is spoken** |
-| 2 | He says, loudly and slowly: *"Hi Lola, it's Miguel, your grandson. I just started a new job in BGC."* | Caregiver window: captions appear (when the visit ends at the latest) |
-| 3 | He walks out of view and waits | ~10 s later, the log shows `[audio] transcribed` and then `[memory] visit N: LLM … Unknown -> Miguel (auto)`. The caregiver page shows **Miguel** with the summary |
+| 2 | He says, loudly and slowly: *"Hi Lola, it's Miguel, your grandson. I just started a new job in BGC."* | Caregiver window: captions appear about every 5 s while he talks |
+| 3 | He walks out of view and waits | ~5 s later the visit closes and the log shows `[audio] transcribed` and then `[memory] visit N: LLM … Unknown -> Miguel (auto)`. The caregiver page shows **Miguel** with the summary |
 | 4 | Once the summary shows, he walks back in | The app **says** "This is Miguel, your grandson. You last saw Miguel … ago. Miguel just started a new job in BGC.", and the bubble sits **beside** his face |
 | 5 | Press **Who's this?** (or the spacebar) | It says the brief again |
+
+**Keep his face in view while he talks.** The visit ends 5 s after the camera loses him. If he turns away for longer, it counts as a new visit and the brief plays again.
 
 **Between runs:** a second run needs a new stranger. Either:
 - delete Miguel on the caregiver page (⋯ → Delete) and use the same person again, or

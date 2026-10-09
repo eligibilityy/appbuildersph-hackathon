@@ -1,18 +1,20 @@
 """In-memory PCM buffering and local faster-whisper transcription.
 
-While a visit is open, mic audio is buffered and transcribed every _INTERVAL_SECONDS (live captions).
+While a visit is open, mic audio is buffered and transcribed every config.TRANSCRIBE_EVERY_SECONDS (live captions),
+cut at the quietest moment near the end so a word isn't split between two chunks.
 When a visit ends, memory.py calls finish_visit() before reading the transcript: it waits for any
 transcription in progress, then transcribes what's left in the buffer, so a short "Hi Lola, it's
 Miguel..." said just before leaving is never lost. Raw audio is never written to disk.
 """
 from __future__ import annotations
 
+import re
 import threading
 import time
 
 import config
 
-_INTERVAL_SECONDS = 12
+_SPLIT_SEARCH_SECONDS = 1.5  # look this far back from the end of a chunk for a pause to cut at
 _MIN_FLUSH_SECONDS = 0.5  # less than this left over at visit end: nothing worth transcribing
 _FINISH_WAIT_SECONDS = 60
 _BYTES_PER_SECOND = 16_000 * 2  # mono, signed PCM16 at 16 kHz
@@ -55,15 +57,37 @@ def warm_up() -> None:
     print(f"[audio] Whisper {config.WHISPER_MODEL} ready in {time.perf_counter() - started:.2f}s", flush=True)
 
 
-def _take_locked(min_bytes: int):
-    """Hand the whole buffer to one transcription job (call with _lock held)."""
+def _interval_bytes() -> int:
+    return int(config.TRANSCRIBE_EVERY_SECONDS * _BYTES_PER_SECOND)
+
+
+def quiet_split(pcm: bytes) -> int:
+    """Byte offset of the quietest 20 ms in the last _SPLIT_SEARCH_SECONDS of `pcm`: cutting there instead of
+    at a fixed length keeps words whole ("...a new job in BG" + "C" becomes "...in BGC")."""
+    import numpy as np
+
+    samples = np.frombuffer(pcm, dtype="<i2").astype(np.float32)
+    frame = 320  # 20 ms at 16 kHz
+    start = max(0, len(samples) - int(_SPLIT_SEARCH_SECONDS * 16_000))
+    n = (len(samples) - start) // frame
+    if n < 2:
+        return len(pcm)
+    energy = (samples[start : start + n * frame].reshape(n, frame) ** 2).mean(axis=1)
+    return (start + int(np.argmin(energy)) * frame + frame // 2) * 2
+
+
+def _take_locked(min_bytes: int, split: bool = False):
+    """Hand the buffer to one transcription job (call with _lock held). With `split` (live captions), cut at a
+    pause and keep the rest buffered for the next chunk; otherwise (end of visit) take everything."""
     global _worker_active
     if _worker_active or not _buffer_visits or len(_buffer) < min_bytes:
         return None
-    pcm = bytes(_buffer)
-    _buffer.clear()
+    cut = quiet_split(bytes(_buffer)) if split else len(_buffer)
+    pcm = bytes(_buffer[:cut])
+    del _buffer[:cut]
     visit_ids = set(_buffer_visits)
-    _buffer_visits.clear()
+    if not _buffer:
+        _buffer_visits.clear()  # otherwise the leftover still belongs to the same visits
     _worker_active = True
     return pcm, visit_ids
 
@@ -89,7 +113,7 @@ def feed(pcm: bytes) -> None:
     with _lock:
         _buffer.extend(pcm)
         _buffer_visits.update(open_ids)
-        job = _take_locked(_INTERVAL_SECONDS * _BYTES_PER_SECOND)
+        job = _take_locked(_interval_bytes(), split=True)
     _start_job(job)
 
 
@@ -113,6 +137,12 @@ def finish_visit(visit_id: int) -> None:
         _transcribe(*job)
 
 
+def _trim_chunk_dots(text: str) -> str:
+    """Whisper marks a sentence cut by the chunk edge with "...": "a new job in..." + "...BGC". Drop those
+    edge dots so the caption and the saved transcript read as one sentence ("a new job in BGC")."""
+    return re.sub(r"^(?:\.\.\.|…)\s*|\s*(?:\.\.\.|…)$", "", text).strip()
+
+
 def _transcribe(pcm: bytes, visit_ids: set[int]) -> None:
     global _worker_active
     started = time.perf_counter()
@@ -128,6 +158,7 @@ def _transcribe(pcm: bytes, visit_ids: set[int]) -> None:
             vad_filter=True,
         )
         text = " ".join(segment.text.strip() for segment in segments if segment.text.strip()).strip()
+        text = _trim_chunk_dots(text)
         if text:
             for visit_id in visits.append_transcript(visit_ids, text):
                 hub.broadcast_threadsafe({"type": "transcript", "visit_id": visit_id, "text": text})
@@ -138,5 +169,5 @@ def _transcribe(pcm: bytes, visit_ids: set[int]) -> None:
         with _idle:
             _worker_active = False
             _idle.notify_all()
-            next_job = _take_locked(_INTERVAL_SECONDS * _BYTES_PER_SECOND)
+            next_job = _take_locked(_interval_bytes(), split=True)
         _start_job(next_job)
