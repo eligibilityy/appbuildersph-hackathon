@@ -96,6 +96,9 @@ OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3:4b")  # fallback: "qwen3:1.
 OLLAMA_OPTIONS = {"num_ctx": 4096}
 OLLAMA_KEEP_ALIVE = -1
 OLLAMA_HOST = "http://127.0.0.1:11434"  # always local; never a remote Ollama
+# Give up on an Ollama request after this long instead of waiting forever (e.g. Ollama stuck trying to load a
+# model that doesn't fit): the visit stays unprocessed and is retried at the next start; Ask shows an error.
+OLLAMA_TIMEOUT_SECONDS = float(os.environ.get("OLLAMA_TIMEOUT_SECONDS", 120))
 MEMORY_MIN_WORDS = 6            # shorter transcripts are skipped (nothing worth remembering)
 
 # --- TTS (CPU) ---
