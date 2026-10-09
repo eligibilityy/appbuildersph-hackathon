@@ -1,4 +1,4 @@
-"""People: queries + REST routes (/people, /thumbs). Owner: lead."""
+"""People: queries + REST routes (/people, /thumbs)."""
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 
