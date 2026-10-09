@@ -1,40 +1,82 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { RefObject, useCallback, useEffect, useRef, useState } from "react";
 import { Check, CameraOff, X } from "lucide-react";
 import { grabFrame, useCamera } from "@/lib/camera";
 import { cn } from "@/lib/utils";
 
+/** Per-photo verdict shown on the thumbnail: green ring when ok, red ring + reason when not. */
+export type PhotoMark = { ok: boolean; message?: string | null };
+
+/** Live guidance bubble above the shutter, e.g. "Face found - ready". */
+export type CaptureHint = { text: string; tone: "ok" | "warn" | "info" };
+
 type Props = {
   /** One instruction per photo slot, e.g. "Look straight at the camera". */
   steps: string[];
-  /** Called with the captured photos (JPEG data URLs, in slot order) whenever they change. */
-  onChange: (photos: string[]) => void;
-  /** Change this value to clear all photos (e.g. after saving). */
+  /** Uncontrolled mode: called with the captured photos (JPEG data URLs, slot order) whenever they change. */
+  onChange?: (photos: string[]) => void;
+  /** Uncontrolled mode: change this value to clear all photos (e.g. after saving). */
   resetKey?: number;
+
+  /** Controlled mode: the parent owns the photos. Pass `slots` + `onCapture` + `onRetake`. */
+  slots?: (string | null)[];
+  onCapture?: (index: number, dataUrl: string) => void;
+  onRetake?: (index: number) => void;
+
+  /** Optional verdict per slot (same indexes as `steps`). */
+  marks?: (PhotoMark | null | undefined)[];
+  /** Optional live guidance shown over the preview. */
+  hint?: CaptureHint | null;
+  /** Optional: pass a ref to read frames from the live preview (e.g. for live checks). */
+  videoRef?: RefObject<HTMLVideoElement | null>;
   className?: string;
+};
+
+const HINT_TONE: Record<CaptureHint["tone"], string> = {
+  ok: "bg-success text-white",
+  warn: "bg-warning text-black",
+  info: "bg-white/90 text-black",
 };
 
 /**
  * Guided photo capture, in the spirit of iOS Face ID setup: live mirrored preview, the current
  * instruction, a progress bar, a round shutter button, and a strip of shots you can retake.
  */
-export default function CameraCapture({ steps, onChange, resetKey = 0, className }: Props) {
-  const videoRef = useRef<HTMLVideoElement>(null);
+export default function CameraCapture({
+  steps,
+  onChange,
+  resetKey = 0,
+  slots: controlledSlots,
+  onCapture,
+  onRetake,
+  marks,
+  hint,
+  videoRef: externalVideoRef,
+  className,
+}: Props) {
+  const internalVideoRef = useRef<HTMLVideoElement>(null);
+  const videoRef = externalVideoRef ?? internalVideoRef;
   const grabRef = useRef<HTMLCanvasElement>(null);
   const camError = useCamera(videoRef);
-  const [slots, setSlots] = useState<(string | null)[]>(() => steps.map(() => null));
   const [flash, setFlash] = useState(false);
 
+  // Uncontrolled photo state.
+  const [ownSlots, setOwnSlots] = useState<(string | null)[]>(() => steps.map(() => null));
   useEffect(() => {
-    setSlots(Array.from({ length: steps.length }, () => null));
-  }, [resetKey, steps.length]);
-
-  useEffect(() => {
-    onChange(slots.filter((s): s is string => s !== null));
+    setOwnSlots(Array.from({ length: steps.length }, () => null));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slots]);
+  }, [resetKey]);
+  useEffect(() => {
+    // Steps added or removed (e.g. glasses toggled): keep the photos already taken.
+    setOwnSlots((s) => Array.from({ length: steps.length }, (_, i) => s[i] ?? null));
+  }, [steps.length]);
+  useEffect(() => {
+    if (!controlledSlots) onChange?.(ownSlots.filter((s): s is string => s !== null));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ownSlots]);
 
+  const slots = controlledSlots ? steps.map((_, i) => controlledSlots[i] ?? null) : ownSlots;
   const current = slots.findIndex((s) => s === null); // -1 when every slot is filled
   const done = current === -1;
   const taken = slots.filter(Boolean).length;
@@ -43,12 +85,16 @@ export default function CameraCapture({ steps, onChange, resetKey = 0, className
     if (done || !videoRef.current || !grabRef.current) return;
     const f = grabFrame(videoRef.current, grabRef.current, 640, 0.9);
     if (!f) return;
-    setSlots((s) => s.map((v, i) => (i === current ? f.dataUrl : v)));
+    if (controlledSlots) onCapture?.(current, f.dataUrl);
+    else setOwnSlots((s) => s.map((v, i) => (i === current ? f.dataUrl : v)));
     setFlash(true);
     setTimeout(() => setFlash(false), 120);
-  }, [current, done]);
+  }, [current, done, controlledSlots, onCapture, videoRef]);
 
-  const remove = (i: number) => setSlots((s) => s.map((v, j) => (j === i ? null : v)));
+  const remove = (i: number) => {
+    if (controlledSlots) onRetake?.(i);
+    else setOwnSlots((s) => s.map((v, j) => (j === i ? null : v)));
+  };
 
   return (
     <div className={cn("flex flex-col gap-3", className)}>
@@ -60,7 +106,7 @@ export default function CameraCapture({ steps, onChange, resetKey = 0, className
         {/* Face guide */}
         {!camError && !done && (
           <div className="pointer-events-none absolute inset-0 grid place-items-center">
-            <div className="h-[62%] aspect-[3/4] rounded-[50%] border-2 border-dashed border-white/50" />
+            <div className="aspect-[3/4] h-[62%] rounded-[50%] border-2 border-dashed border-white/50" />
           </div>
         )}
 
@@ -84,9 +130,17 @@ export default function CameraCapture({ steps, onChange, resetKey = 0, className
           </div>
         )}
 
-        {/* Shutter */}
+        {/* Live hint + shutter */}
         {!camError && (
-          <div className="absolute inset-x-0 bottom-0 flex justify-center p-4">
+          <div className="absolute inset-x-0 bottom-0 flex flex-col items-center gap-3 p-4">
+            {!done && hint && (
+              <div
+                role="status"
+                className={cn("rounded-full px-4 py-1.5 text-body font-semibold", HINT_TONE[hint.tone])}
+              >
+                {hint.text}
+              </div>
+            )}
             <button
               type="button"
               onClick={capture}
@@ -121,36 +175,47 @@ export default function CameraCapture({ steps, onChange, resetKey = 0, className
 
       {/* Shots — tap the x to retake one */}
       <div
-        className="grid max-w-[480px] gap-2"
+        className="grid max-w-[560px] gap-2"
         style={{ gridTemplateColumns: `repeat(${steps.length}, minmax(0, 96px))` }}
       >
-        {slots.map((s, i) => (
-          <div
-            key={i}
-            className={cn(
-              "relative aspect-square overflow-hidden rounded-xl",
-              s ? "bg-muted" : "border border-dashed border-input",
-              i === current && "border-solid border-primary ring-3 ring-primary/15",
-            )}
-          >
-            {s ? (
-              <>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={s} alt={`Photo ${i + 1}`} className="h-full w-full object-cover" />
-                <button
-                  type="button"
-                  onClick={() => remove(i)}
-                  aria-label={`Retake photo ${i + 1}`}
-                  className="absolute right-1 top-1 grid size-6 place-items-center rounded-full bg-black/60 text-white outline-none hover:bg-black/75 focus-visible:ring-3 focus-visible:ring-ring/60"
-                >
-                  <X className="size-3.5" strokeWidth={2.5} />
-                </button>
-              </>
-            ) : (
-              <span className="grid h-full place-items-center text-footnote text-tertiary-foreground">{i + 1}</span>
-            )}
-          </div>
-        ))}
+        {slots.map((s, i) => {
+          const mark = s ? marks?.[i] : null;
+          return (
+            <div
+              key={i}
+              title={mark?.message ?? (s ? undefined : steps[i])}
+              className={cn(
+                "relative aspect-square overflow-hidden rounded-xl",
+                s ? "bg-muted" : "border border-dashed border-input",
+                i === current && "border-solid border-primary ring-3 ring-primary/15",
+                mark?.ok === true && "ring-3 ring-success",
+                mark?.ok === false && "ring-3 ring-destructive",
+              )}
+            >
+              {s ? (
+                <>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={s} alt={`Photo ${i + 1}`} className="h-full w-full object-cover" />
+                  <button
+                    type="button"
+                    onClick={() => remove(i)}
+                    aria-label={`Retake photo ${i + 1}`}
+                    className="absolute right-1 top-1 grid size-6 place-items-center rounded-full bg-black/60 text-white outline-none hover:bg-black/75 focus-visible:ring-3 focus-visible:ring-ring/60"
+                  >
+                    <X className="size-3.5" strokeWidth={2.5} />
+                  </button>
+                  {mark?.ok === false && mark.message && (
+                    <span className="absolute inset-x-0 bottom-0 bg-destructive/90 px-1 py-0.5 text-[11px] leading-tight text-white">
+                      {mark.message}
+                    </span>
+                  )}
+                </>
+              ) : (
+                <span className="grid h-full place-items-center text-footnote text-tertiary-foreground">{i + 1}</span>
+              )}
+            </div>
+          );
+        })}
       </div>
       <p className="text-footnote text-muted-foreground">
         {taken} of {steps.length} photos · tap × on a photo to retake it
