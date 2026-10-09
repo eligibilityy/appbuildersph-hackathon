@@ -83,7 +83,7 @@ python3.11 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
 ```
 
-The first time the server starts, it downloads the InsightFace `buffalo_s` face model (~120 MB) to `~/.insightface/models/buffalo_s`. After that it loads offline in a second or two.
+The first time the server starts, it downloads the InsightFace `buffalo_s` face model to `~/.insightface/models/buffalo_s`. After that it loads offline in a second or two. For the other models, see [Models](#models-what-each-laptop-needs) below.
 
 ### 3. Web (Next.js)
 
@@ -93,12 +93,101 @@ npm install
 npx next telemetry disable   # Next.js sends usage data by default; we must not
 ```
 
-### 4. Ollama models (from Milestone 3)
+### 4. Models
+
+Download only the models for the part you're working on. See the next section.
+
+---
+
+## Models: what each laptop needs
+
+Everything runs locally, so the AI model files have to be on the laptop. Each is a **one-time download**. After that, the app works with Wi-Fi off.
+
+### The models
+
+| Model | Job | Size on disk | Where it's stored | Needed from |
+|---|---|---|---|---|
+| InsightFace `buffalo_s` | Face detection + recognition | ~160 MB (measured) | `~/.insightface/models/buffalo_s` | Milestone 1 (now) |
+| Piper `en_US-lessac-medium` | Text-to-speech (the voice) | ~60 MB (approx.) | repo `models/` folder | Milestone 2 |
+| faster-whisper `small` | Speech-to-text | ~0.5 GB (approx.) | `~/.cache/huggingface/hub` | Milestone 2 |
+| Ollama `qwen3:4b` | Summaries, facts, names from conversations | ~2.5 GB (approx.) | `~/.ollama/models` | Milestone 3 |
+| Ollama app | Runs the LLM on the GPU | ~1 GB+ (approx.) | installed program | Milestone 3 |
+
+**Smaller fallbacks** for weaker laptops or slow internet:
+
+| Instead of | Use | Size (approx.) | Trade-off |
+|---|---|---|---|
+| Whisper `small` | Whisper `base` | ~150 MB | Less accurate, especially Taglish |
+| `qwen3:4b` | `qwen3:1.7b` | ~1.4 GB | Weaker at pulling out names and facts |
+
+*(Approximate sizes will be replaced with measured ones once downloaded.)*
+
+### Which laptop needs what
+
+| Laptop / role | Faces | Piper voice | Whisper | Ollama + LLM | Total (approx.) |
+|---|---|---|---|---|---|
+| **Frontend / UI work** (pages, dashboard) | ✅ | — | — | — | ~160 MB |
+| **Audio work** (mic, transcripts, voice) | ✅ | ✅ | ✅ `small` (or `base`) | — | ~0.7 GB |
+| **LLM / memory work** | ✅ | — | — | ✅ `qwen3:1.7b` is fine for development | ~2.5 GB |
+| **🎤 Demo laptop** | ✅ | ✅ | ✅ `small` | ✅ `qwen3:4b` **and** `qwen3:1.7b` as backup | ~5 GB |
+
+The server only loads a model when the feature that needs it runs. For example, if you're working on the UI, the server runs without the Whisper or LLM models downloaded.
+
+### How to download each one
+
+Run these from the `server` folder with internet on. macOS/Linux: use `.venv/bin/python` instead of `.\.venv\Scripts\python`.
+
+**Faces** (automatic): start the server once with `.\.venv\Scripts\python main.py`.
+
+**Piper voice:**
+```powershell
+.\.venv\Scripts\python -m piper.download_voices en_US-lessac-medium --data-dir ..\models
+```
+This saves `en_US-lessac-medium.onnx` and `en_US-lessac-medium.onnx.json` into `models/`.
+
+**Whisper:** the server runs in offline mode, so download ahead of time:
+```powershell
+.\.venv\Scripts\python -c "import os; os.environ['HF_HUB_OFFLINE']='0'; from faster_whisper import WhisperModel; WhisperModel('small', device='cpu', compute_type='int8')"
+```
+Replace `'small'` with `'base'` for the smaller model.
+
+**Ollama + LLM:** install Ollama from https://ollama.com/download, then:
+```powershell
+ollama pull qwen3:4b      # default (demo laptop)
+ollama pull qwen3:1.7b    # fallback / development
+ollama list               # confirm they're there
+```
+
+### Using the smaller models
+
+Model names are in `server/config.py`. Override them per laptop with environment variables, so nobody has to edit the code:
 
 ```powershell
-ollama pull qwen3:4b      # default, runs on the GPU
-ollama pull qwen3:1.7b    # fallback for weaker laptops
+# PowerShell, in the terminal where you start the server
+$env:WHISPER_MODEL = "base"
+$env:OLLAMA_MODEL = "qwen3:1.7b"
+.\.venv\Scripts\python main.py
 ```
+```bash
+# macOS / Linux
+WHISPER_MODEL=base OLLAMA_MODEL=qwen3:1.7b .venv/bin/python main.py
+```
+
+### Copy models by USB instead of downloading
+
+Model files are just files. Once one person has them, copy these folders to the same place on another laptop. This helps when venue Wi-Fi is slow.
+
+| Model | Windows | macOS / Linux |
+|---|---|---|
+| Faces | `C:\Users\<you>\.insightface\models\buffalo_s\` | `~/.insightface/models/buffalo_s/` |
+| Whisper | `C:\Users\<you>\.cache\huggingface\hub\models--Systran--faster-whisper-small\` | `~/.cache/huggingface/hub/models--Systran--faster-whisper-small/` |
+| Piper voice | `<repo>\models\en_US-lessac-medium.onnx` + `.onnx.json` | `<repo>/models/` (same files) |
+| Ollama LLMs | `C:\Users\<you>\.ollama\models\` (copy the whole folder: `blobs` + `manifests`) | `~/.ollama/models/` |
+
+Notes:
+- **Ollama:** the receiving laptop still needs the Ollama app installed (~1 GB installer, which can also go on the USB). Quit Ollama before copying the `models` folder in. Then check that `ollama list` shows the models.
+- **Whisper `base`:** the folder is `models--Systran--faster-whisper-base`.
+- **Disk space:** `buffalo_s.zip` in `~/.insightface/models/` can be deleted after the first run.
 
 ---
 
@@ -240,7 +329,7 @@ git push -u origin your-feature  # then open a PR, or merge to main after a quic
 - [ ] InsightFace model cached (`~/.insightface/models/buffalo_s`)
 - [ ] faster-whisper model cached (Milestone 2)
 - [ ] Piper voice files in `models/` (Milestone 2)
-- [ ] Ollama models pulled; `ollama ps` shows 100% GPU (Milestone 3)
+- [ ] Ollama `qwen3:4b` + backup `qwen3:1.7b` pulled; `ollama ps` shows 100% GPU (Milestone 3)
 - [ ] `npx next telemetry disable` done on this laptop
 - [ ] `grep -rn "https://" web/src` prints nothing
 - [ ] Full end-to-end run with **Wi-Fi OFF**
