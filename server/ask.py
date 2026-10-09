@@ -1,4 +1,4 @@
-"""Ask about your people + add a conversation by typing it. Both run on the local LLM (Ollama). Owner: lead.
+"""Ask about your people + add a conversation by typing it. Both run on the local LLM (Ollama).
 
   POST /people/{id}/conversations  {"transcript": "..."}  -> remember a typed/pasted conversation as a visit
                                     (summary + facts + auto-name, via memory.process_visit)

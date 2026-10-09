@@ -181,7 +181,7 @@ Prompt rules: only use what was said; never invent; null when unsure. Hint for F
 
 ## Repo layout
 
-One module per feature, each with one owner (see `docs/TEAM_PLAN.md`). Keep new code inside the feature it belongs to, and don't change a stub's function signature without telling the lead.
+One module per feature. Keep new code inside the feature it belongs to.
 
 ```
 /web/src
@@ -203,7 +203,6 @@ One module per feature, each with one owner (see `docs/TEAM_PLAN.md`). Keep new 
   tools/          smoke_test.py (run before every push), eval_faces.py (threshold tuning)
   data/           (gitignored) app.db, thumbs/, tts/, eval/
 /models           Piper voice files (+ README notes on InsightFace/Whisper cache)
-/docs/TEAM_PLAN.md  feature order, timetable, file ownership
 README.md         setup, offline prep, hardware, disclosures
 ```
 
