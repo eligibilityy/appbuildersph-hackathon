@@ -18,3 +18,7 @@ next-env.d.ts
 .env.local
 .DS_Store
 Thumbs.db
+
+# Model files are downloaded locally (see README "Models"), never committed
+models/*.onnx
+models/*.onnx.json
