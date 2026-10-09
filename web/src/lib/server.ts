@@ -3,9 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 
 // Backend runs on the same machine. Never point this at a remote host.
+// Use 127.0.0.1, not "localhost": browsers send every cookie set on localhost (by any app, any
+// port) to localhost:8000, and big ones (>~8 KB, e.g. auth cookies from other projects) make
+// the WebSocket handshake fail with "431 Request Header Fields Too Large".
 export function serverUrl(): string {
-  if (typeof window === "undefined") return "http://localhost:8000";
-  return `http://${window.location.hostname}:8000`;
+  return "http://127.0.0.1:8000";
 }
 
 export function wsUrl(): string {

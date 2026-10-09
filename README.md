@@ -361,6 +361,8 @@ git push -u origin your-feature  # then open a PR; the lead merges into main
 | Problem | Fix |
 |---|---|
 | Red dot in the top-right of the patient view | The server isn't running, or isn't on port 8000. Start Terminal 1. |
+| No face boxes; server log shows `431 Request Header Fields Too Large` | Big cookies from other `localhost` projects were being sent to the server. Fixed: the web app now talks to `127.0.0.1:8000`. Rebuild (`npm run build`, restart `npm start`) or use `npm run dev`. |
+| Changes in `web/` don't show up | `npm start` serves the last build. Run `npm run build` again and restart it, or use `npm run dev` while coding. |
 | "Camera unavailable" | Allow camera access in Chrome (lock icon → Camera), and close other apps using the webcam (Zoom, Teams, OBS). |
 | Camera doesn't work when opening the app from another device by IP | Browsers only allow the camera on `localhost` or HTTPS. Run the browser on the same laptop as the server. |
 | `[Errno 10048]` / address already in use | Something is already on port 8000. Close the old server terminal, or find it with `netstat -ano \| findstr :8000` and stop that PID. |
