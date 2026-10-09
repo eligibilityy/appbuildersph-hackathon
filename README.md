@@ -237,6 +237,7 @@ Model names live in `server/config.py`. Override them per laptop without editing
 | Face detect + embed, 1 face | 40–60 ms per frame | Dev laptop, CPU, det size 320, 640×480 test image |
 | Face detect + embed, during full-app tests | 183–306 ms mean per frame | Dev laptop, det size 480, while also running the web app, a test browser and the LLM (RAM ~96% used) |
 | Model warm-up at server start | Piper 7.4–8.9 s · Whisper `base` 2.1–5.0 s · Qwen3 4B 10.6–14.1 s | Dev laptop |
+| Model warm-up at server start | Faces 0.7 s · Piper 3.13 s · Whisper `base` 0.71 s | **Demo laptop** (one startup). Qwen3 4B reported 0.11 s there because Ollama already had it in memory, so that's not a load time |
 | Piper: speak one brief | 0.2–1.0 s | Dev laptop, CPU, after warm-up |
 | Whisper `base`: 5 s of speech | 0.8–1.7 s | Dev laptop, CPU, int8 |
 | Live captions: first caption after speech starts | 7.0 s (was 14.6 s with 12 s chunks) | Dev laptop, 25.6 s of speech fed in real time |
