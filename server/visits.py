@@ -1,11 +1,11 @@
-"""Visit lifecycle + spoken brief text. Owner: lead.
+"""Visit lifecycle, appearance history and the spoken brief.
 
-STUB — the signatures are final; fill in the bodies. Block 1 task:
-  update(): open a visit when a person is confirmed in view; close it after they've been
-            absent VISIT_END_SECONDS. On open: speak the brief (brief_text -> tts.speak).
-            On close: memory.enqueue(visit_id).
-  brief_text(): "This is {name}, your {relationship}. You last saw {name} {humanized time}. {last summary}"
-Unknown people: never speak to the patient (caregiver view only).
+  update()       after every frame: open a visit when a person is confirmed in view (and speak the brief),
+                 close it after they've been absent VISIT_END_SECONDS (then memory.enqueue(visit_id)).
+  brief_text()   "This is {name}, your {relationship}. You last saw {name} {time} ago. {last summary}"
+                 built from SQLite, never by the LLM at speak time, so it's instant.
+  replay_brief() "Who's this?" button / spacebar.
+Unknown people get visits too, but are never spoken to the patient (caregiver view only).
 """
 import threading
 import time

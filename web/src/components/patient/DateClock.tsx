@@ -15,10 +15,10 @@ export default function DateClock() {
   if (!now) return <div className="h-[62px]" aria-hidden />;
   return (
     <div className="leading-tight">
-      <div className="text-[28px] font-bold tracking-[-0.015em]">
+      <div className="text-[20px] font-medium tracking-[-0.015em]">
         {new Intl.DateTimeFormat(undefined, { weekday: "long", month: "long", day: "numeric" }).format(now)}
       </div>
-      <div className="text-[20px] font-medium text-muted-foreground">
+      <div className="text-[16px] font-medium text-muted-foreground">
         {new Intl.DateTimeFormat(undefined, { timeStyle: "short" }).format(now)}
       </div>
     </div>
