@@ -98,6 +98,9 @@ export default function CaregiverPage() {
             </Link>
           </Button>
         </div>
+        <p className="sr-only" role="status">
+          {connected ? "Live updates connected" : "Live updates disconnected"}
+        </p>
 
         {error && (
           <p role="alert" className="mb-6 rounded-xl bg-destructive/10 p-4 text-body text-destructive">
@@ -107,25 +110,61 @@ export default function CaregiverPage() {
 
         {people === null && !error && <CardGridSkeleton />}
 
-        {people !== null && unknown.length > 0 && (
-          <Section
-            title="Needs a name"
-            description="Faces the app saw but doesn't know yet. Say who they are, or merge them into someone you added."
-          >
-            {unknown.map((p) => (
-              <PersonCard key={p.id} p={p} version={version} knownPeople={known} onChanged={load} />
-            ))}
-          </Section>
-        )}
-
-        {people !== null && (
-          <Section title="Family & friends">
-            {known.length === 0 ? (
-              <EmptyState />
-            ) : (
-              known.map((p) => <PersonCard key={p.id} p={p} version={version} knownPeople={known} onChanged={load} />)
+        {selectedId !== null ? (
+          <section aria-live="polite">
+            {detailLoading && <p className="text-body text-muted-foreground">Loading person details...</p>}
+            {detailError && (
+              <div role="alert" className="text-body text-destructive">
+                <p>Unable to load this person: {detailError}</p>
+                <Button variant="outline" className="mt-3" onClick={() => loadDetail(selectedId)}>
+                  Try again
+                </Button>
+              </div>
             )}
-          </Section>
+            {detail && <PersonDetail person={detail} version={version} onBack={closeDetail} />}
+            {!detailLoading && !detailError && !detail && (
+              <p className="text-body text-muted-foreground">This person may have been deleted.</p>
+            )}
+          </section>
+        ) : (
+          <>
+            {people !== null && unknown.length > 0 && (
+              <Section
+                title="Needs a name"
+                description="Faces the app saw but doesn't know yet. Say who they are, or merge them into someone you added."
+              >
+                {unknown.map((p) => (
+                  <PersonCard
+                    key={p.id}
+                    p={p}
+                    version={version}
+                    knownPeople={known}
+                    onChanged={load}
+                    onSelect={() => loadDetail(p.id)}
+                  />
+                ))}
+              </Section>
+            )}
+
+            {people !== null && (
+              <Section title="Family & friends">
+                {known.length === 0 ? (
+                  <EmptyState />
+                ) : (
+                  known.map((p) => (
+                    <PersonCard
+                      key={p.id}
+                      p={p}
+                      version={version}
+                      knownPeople={known}
+                      onChanged={load}
+                      onSelect={() => loadDetail(p.id)}
+                    />
+                  ))
+                )}
+              </Section>
+            )}
+          </>
         )}
       </main>
     </>
@@ -142,51 +181,34 @@ function Section({ title, description, children }: { title: string; description?
   );
 }
 
+function CardGridSkeleton() {
+  return (
+    <div role="status" aria-label="Loading people" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      {Array.from({ length: 6 }, (_, index) => (
+        <div key={index} className="flex min-h-40 gap-4 rounded-xl border bg-card p-4">
+          <Skeleton className="size-16 shrink-0 rounded-full" />
+          <div className="flex flex-1 flex-col gap-3 pt-1">
+            <Skeleton className="h-5 w-2/3" />
+            <Skeleton className="h-4 w-1/2" />
+            <Skeleton className="mt-auto h-9 w-full" />
+          </div>
+        </div>
+      ))}
+      <span className="sr-only">Loading people...</span>
+    </div>
+  );
+}
+
 function EmptyState() {
   return (
-    <main className="mx-auto max-w-5xl p-6 text-neutral-900">
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-3xl font-bold">{selectedId === null ? "Caregiver" : "Person details"}</h1>
-        <nav className="flex items-center gap-4 text-blue-700 underline">
-          <span className={`h-3 w-3 rounded-full ${connected ? "bg-green-500" : "bg-red-600"}`} />
-          <Link href="/">Patient view</Link>
-          <Link href="/enroll">Add a person</Link>
-        </nav>
-      </div>
-      {error && <p className="mb-4 text-red-700">{error}</p>}
-      {selectedId !== null && (
-        <div aria-live="polite">
-          {detailLoading && <p className="mb-4 text-neutral-600">Loading person details...</p>}
-          {detailError && (
-            <div className="mb-4 text-red-700">
-              <p>Unable to load this person: {detailError}</p>
-              <button type="button" onClick={() => loadDetail(selectedId)} className="mt-2 underline">
-                Retry
-              </button>
-            </div>
-          )}
-          {detail && <PersonDetail person={detail} version={version} onBack={closeDetail} />}
-          {!detailLoading && !detailError && !detail && (
-            <p className="mb-4 text-neutral-600">This person may have been deleted.</p>
-          )}
-        </div>
-      )}
-      {selectedId === null && people.length === 0 && !error && (
-        <p className="text-neutral-600">No one yet. Add a person to get started.</p>
-      )}
-
-      <ul hidden={selectedId !== null} className="grid gap-4 sm:grid-cols-2">
-        {people.map((p) => (
-          <PersonCard
-            key={p.id}
-            p={p}
-            version={version}
-            onSave={save}
-            onDelete={remove}
-            onSelect={(person) => loadDetail(person.id)}
-          />
-        ))}
-      </ul>
-    </main>
+    <li className="col-span-full flex flex-col items-center gap-3 rounded-xl border border-dashed bg-card px-6 py-10 text-center">
+      <span className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
+        <Users aria-hidden="true" className="size-6" />
+      </span>
+      <p className="text-body font-medium">No known people yet</p>
+      <p className="max-w-sm text-footnote text-muted-foreground">
+        Add a person to start building their recognition and appearance history.
+      </p>
+    </li>
   );
 }
