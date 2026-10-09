@@ -268,17 +268,26 @@ server/
   requirements.txt   Pinned Python dependencies
   data/              (gitignored, auto-created) app.db, thumbs/, tts/, eval/
 
+web/
+  fonts/open-runde/            Open Runde font files + licence (loaded with next/font/local)
+  components.json              shadcn/ui config
 web/src/
+  app/globals.css              Design tokens: colours, radius, iOS-style type scale (text-large-title, ...)
   app/page.tsx                 Patient view (/)
   app/enroll/page.tsx          Enrollment (/enroll)
   app/caregiver/page.tsx       Caregiver dashboard (/caregiver)
+  components/ui/               shadcn/ui components (button, card, dialog, select, ...), tuned for 44px targets
+  components/app/              AppHeader (top nav), ConnectionStatus (server online chip)
+  components/CameraCapture.tsx Guided photo capture, used by enroll and "Add photos"
   components/FaceOverlay.tsx   Video + face boxes and names
   components/NameCard.tsx      Big name card
-  components/caregiver/PersonCard.tsx   One person on the caregiver page
+  components/patient/          WhoButton, CameraErrorCard
+  components/caregiver/        PersonCard, MergeControl, AddPhotosDialog, EditPersonDialog
   lib/api.ts                   Typed REST calls (people, enroll, addPhotos, merge, ...)
   lib/server.ts                Server URL, WebSocket hook with auto-reconnect, shared types
   lib/camera.ts                Webcam hook + frame grabbing
   lib/audio.ts                 Plays the spoken brief; mic capture goes here later
+  lib/format.ts                "5 min ago", initials
 
 models/              Piper voice files go here
 ```
@@ -426,6 +435,9 @@ Models, frameworks, and tools used. This list will be finalized before submissio
 | [Piper](https://github.com/OHF-Voice/piper1-gpl) `en_US-lessac-medium` (planned) | Text-to-speech | `piper-tts` library: GPL-3.0; voice: see its model card |
 | FastAPI, Uvicorn, NumPy, OpenCV, SQLite | Backend | open source |
 | Next.js, React, Tailwind CSS | Frontend | open source |
+| [shadcn/ui](https://ui.shadcn.com) + Radix UI | UI components (copied into `web/src/components/ui`) | MIT |
+| lucide-react · sonner, cn, tw-animate-css, next-themes · class-variance-authority | Icons, toasts, styling helpers | ISC · MIT · Apache-2.0 |
+| [Open Runde](https://github.com/lauridskern/open-runde) | Typeface, bundled in `web/fonts` | SIL OFL 1.1 |
 | **Claude Code (Anthropic)** | AI coding assistant used during development | — |
 
 No cloud APIs are called at runtime. The links above are documentation for readers, not used by the app.

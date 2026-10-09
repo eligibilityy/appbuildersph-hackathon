@@ -1,8 +1,35 @@
 "use client";
 
 import { useState } from "react";
+import { Camera, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { toast } from "sonner";
+import AddPhotosDialog from "@/components/caregiver/AddPhotosDialog";
+import EditPersonDialog from "@/components/caregiver/EditPersonDialog";
+import MergeControl from "@/components/caregiver/MergeControl";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { api } from "@/lib/api";
+import { initials, timeAgo } from "@/lib/format";
 import { Person } from "@/lib/server";
+import { cn } from "@/lib/utils";
 
 type Props = {
   p: Person;
@@ -51,33 +78,64 @@ export default function PersonCard({ p, version, onSave, onDelete, onSelect }: P
         <div className="text-sm text-neutral-600">
           {p.visit_count ?? 0} visit(s){p.last_seen_at ? ` · last seen ${formatShortDate(p.last_seen_at)}` : ""}
         </div>
-        <div className="flex gap-2">
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Name"
-            className="w-full min-w-0 rounded border px-2 py-1"
-          />
-          <input
-            value={relationship}
-            onChange={(e) => setRelationship(e.target.value)}
-            placeholder="Relationship"
-            className="w-full min-w-0 rounded border px-2 py-1"
-          />
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => onSave(p, name.trim(), relationship.trim())}
-            disabled={!name.trim()}
-            className="rounded bg-blue-600 px-3 py-1 text-white disabled:opacity-40"
-          >
-            Save
-          </button>
-          <button onClick={() => onDelete(p)} className="rounded border border-red-300 px-3 py-1 text-red-700">
-            Delete
-          </button>
-        </div>
+
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon" aria-label={`More actions for ${p.name ?? "this person"}`}>
+              <MoreHorizontal className="size-5" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-44">
+            <DropdownMenuItem onSelect={() => setEditing(true)}>
+              <Pencil /> {unknown ? "Name this person" : "Edit"}
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => setAddingPhotos(true)}>
+              <Camera /> Add photos
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem variant="destructive" onSelect={() => setDeleting(true)}>
+              <Trash2 /> Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
+
+      {p.name_source === "auto" && (
+        <p className="rounded-lg bg-primary/5 px-3 py-2 text-footnote text-muted-foreground">
+          Name picked up from a conversation.{" "}
+          <button className="font-medium text-primary hover:underline" onClick={() => setEditing(true)}>
+            Confirm or fix it
+          </button>
+        </p>
+      )}
+
+      {unknown && (
+        <div className="flex flex-col gap-2">
+          <MergeControl unknown={p} knownPeople={knownPeople} onMerged={onChanged} />
+          <Button variant="outline" className="w-full" onClick={() => setEditing(true)}>
+            <Pencil /> It&apos;s someone new — name them
+          </Button>
+        </div>
+      )}
+
+      <EditPersonDialog person={p} open={editing} onOpenChange={setEditing} onSaved={onChanged} />
+      <AddPhotosDialog person={p} open={addingPhotos} onOpenChange={setAddingPhotos} onSaved={onChanged} />
+      <AlertDialog open={deleting} onOpenChange={setDeleting}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {p.name ?? "this person"}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Their photos, visits and memories are removed from this computer. This can&apos;t be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={remove}>
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </li>
   );
 }
