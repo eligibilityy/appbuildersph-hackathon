@@ -2,17 +2,19 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { MicOff, Users, VolumeX } from "lucide-react";
+import { Users, VolumeX } from "lucide-react";
 import ConnectionStatus from "@/components/app/ConnectionStatus";
 import FaceOverlay, { TagAnchor } from "@/components/FaceOverlay";
 import CameraErrorCard from "@/components/patient/CameraErrorCard";
 import DateClock from "@/components/patient/DateClock";
+import MicMeter from "@/components/patient/MicMeter";
 import PersonProfileCard from "@/components/patient/PersonProfileCard";
 import SpeechBubble, { Spoken } from "@/components/patient/SpeechBubble";
 import WhoButton from "@/components/patient/WhoButton";
 import { onSoundBlocked, playSpeech, startMicrophone, unlockSound } from "@/lib/audio";
 import { grabFrame, useCamera } from "@/lib/camera";
 import { isNameable } from "@/lib/nameTags";
+import { api } from "@/lib/api";
 import { FaceBox, ServerEvent, serverUrl, useServerSocket } from "@/lib/server";
 import { useWakeLock } from "@/lib/useWakeLock";
 import { cn } from "@/lib/utils";
@@ -33,6 +35,8 @@ export default function PatientView() {
   const [soundBlocked, setSoundBlocked] = useState(false);
   const [micOff, setMicOff] = useState(false);
   const [voiceMissing, setVoiceMissing] = useState(false);
+  const [transcribing, setTranscribing] = useState(false); // server has live transcription on (FEATURE_AUDIO)
+  const [openVisits, setOpenVisits] = useState<Set<number>>(new Set()); // the server keeps mic audio only while one is open
   const seenAt = useRef(new Map<number, number>()); // person_id -> last time a confirmed face was in view
   const selectedRef = useRef<number | null>(null);
   selectedRef.current = selected?.personId ?? null;
@@ -50,6 +54,13 @@ export default function PatientView() {
       // Always show the words; play the audio when the server could make it.
       if (e.text) setSpoken({ id: Date.now(), text: e.text, personId: e.person_id ?? null });
       if (e.audio_url) playSpeech(e.audio_url);
+    } else if (e.type === "visit_start" || e.type === "visit_end") {
+      setOpenVisits((prev) => {
+        const next = new Set(prev);
+        if (e.type === "visit_start") next.add(e.visit_id);
+        else next.delete(e.visit_id);
+        return next;
+      });
     } else if (e.type === "memory_updated" && e.person_id === selectedRef.current) {
       setProfileVersion((v) => v + 1); // edited, merged or deleted elsewhere: refresh the open card
     }
@@ -57,13 +68,22 @@ export default function PatientView() {
 
   const { wsRef, connected } = useServerSocket(onEvent);
 
-  // Can the server speak? (Piper voice files present.) Checked on each (re)connect.
+  // Can the server speak (Piper voice files present) and transcribe? Which visits are already open?
+  // Checked on each (re)connect.
   useEffect(() => {
     if (!connected) return;
     let cancelled = false;
     fetch(`${serverUrl()}/health`, { cache: "no-store" })
       .then((r) => r.json())
-      .then((h) => !cancelled && setVoiceMissing(h.voice === false))
+      .then((h) => {
+        if (cancelled) return;
+        setVoiceMissing(h.voice === false);
+        setTranscribing(h.features?.audio === true);
+      })
+      .catch(() => {});
+    api
+      .visits()
+      .then((all) => !cancelled && setOpenVisits(new Set(all.filter((v) => !v.ended_at).map((v) => v.id))))
       .catch(() => {});
     return () => {
       cancelled = true;
@@ -180,11 +200,7 @@ export default function PatientView() {
               <VolumeX className="size-3.5" /> Voice off
             </Chip>
           )}
-          {micOff && (
-            <Chip tone="warning" title="Allow microphone access to record conversations.">
-              <MicOff className="size-3.5" /> Mic off
-            </Chip>
-          )}
+          {transcribing && <MicMeter visitOpen={openVisits.size > 0} failed={micOff} />}
           <ConnectionStatus online={connected} />
           <Link
             href="/caregiver"
@@ -195,10 +211,14 @@ export default function PatientView() {
         </nav>
       </header>
 
-      <section aria-label="Camera" className="relative flex min-h-0 flex-1 items-center justify-center px-6 py-2">
+      {/* The camera keeps a fixed 16:9 shape: as wide as fits, unless the height runs out first (cq units). */}
+      <section
+        aria-label="Camera"
+        className="relative flex min-h-0 flex-1 items-center justify-center px-6 py-2 [container-type:size]"
+      >
         <div
           ref={panelRef}
-          className="relative aspect-video max-h-full w-full max-w-4xl overflow-hidden rounded-[28px] bg-black ring-1 ring-black/10"
+          className="relative aspect-video w-[min(100cqw,calc(100cqh*16/9))] max-w-4xl overflow-hidden rounded-[28px] bg-black ring-1 ring-black/10"
         >
           <FaceOverlay
             videoRef={videoRef}
