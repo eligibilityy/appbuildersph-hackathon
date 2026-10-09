@@ -7,6 +7,7 @@
                      auto-name an Unknown visitor who said their name, broadcast memory_updated.
 Ollama is only ever called on localhost.
 """
+import difflib
 import json
 import queue
 import re
@@ -32,19 +33,31 @@ SCHEMA = {
 }
 
 SYSTEM_PROMPT = """You help a person with dementia remember their visitors.
-You get the transcript of one visit (speech-to-text, may contain errors; it can mix English and Filipino).
+You get the transcript of one visit (speech-to-text, may contain errors). It can be in English, Tagalog/Filipino,
+or Taglish (a mix of both); understand all three. Always write summary and facts in simple English: translate what
+was said, and keep names and places exactly as they were said.
+Tagalog help: "po"/"opo" only show respect. "ko", "ako", "akin" = the visitor (I, me, my). "mo", "niyo", "ninyo",
+"kayo" = the patient (you, your): "apo ninyo si Bea" = the patient's grandchild Bea. "uuwi" = will come home,
+"galing sa" = coming from, "pupunta sa" = going to, "ikakasal" = getting married, "lumipat" = moved, "trabaho" = work,
+"nagpa-check up" = had a check-up, "kahapon" = yesterday, "bukas" = tomorrow, "mamaya" = later today,
+"sa susunod na linggo" = next week. Lola, Lolo, Nanay, Tatay, Tita, Tito are what the visitor calls the PATIENT,
+never the visitor's name.
 Return JSON with:
 - visitor_name: just the visitor's first name, ONLY if it is stated in the transcript ("it's Miguel", "ako si Ana",
-  "I'm Carla"). Otherwise "". Never a sentence, never an explanation.
+  "si Carlo po ito", "I'm Carla"). Otherwise "". Never a sentence, never an explanation.
 - relationship: the visitor's relationship TO THE PATIENT, one or two words (e.g. "grandson", "daughter", "neighbor"),
   or "" if unsure. Hints: a visitor who calls the patient "Lola" or "Lolo" is likely a grandchild; "Nanay", "Mama",
-  "Tatay", "Papa" -> a child; "Tita" or "Tito" -> a niece or nephew. Say "grandson"/"granddaughter" only when the
-  gender is clear from what was said, otherwise "grandchild" or "child".
+  "Tatay", "Papa" -> a child; "Tita" or "Tito" -> a niece or nephew. Tagalog words: "apo" = grandchild,
+  "anak" = child, "pamangkin" = niece or nephew, "kapatid" = sibling, "kapitbahay" = neighbor, "kaibigan" = friend.
+  Say "grandson"/"granddaughter" only when the gender is clear from what was said, otherwise "grandchild" or "child".
 - summary: 1-2 short, simple sentences for the patient about what the visitor said.
   Write it like "<name> just <what happened>." using only the news from this transcript.
-  NEVER use "he", "she", "him", "her", "his" or "hers" for the visitor; repeat the name instead.
-  If there is no name, start with "Your visitor".
-- facts: short, concrete facts the visitor stated (new job, a trip, an upcoming event). [] if none.
+  Start with the visitor's name when it is known (given above the transcript) or stated. Only when there is no name
+  at all, start with "Your visitor".
+  NEVER use "he", "she", "him", "her", "his", "hers" or "they" for the visitor; repeat the name instead.
+  If the visitor shares any news (work, school, a trip, plans, an event, health, family), the summary must mention it.
+  Only leave it "" when nothing worth remembering was said.
+- facts: short, concrete facts the visitor stated (new job, a trip, an upcoming event), in English. [] if none.
 Rules: only use what was said in the transcript. Never invent names, places, dates or events.
 A question is not a fact ("Have you eaten?" does not mean the patient ate). Use "" when unsure."""
 
@@ -116,7 +129,8 @@ def is_trivial(transcript: str | None) -> bool:
 def call_llm(transcript: str, known_name: str | None, known_relationship: str | None) -> tuple[dict, float]:
     """Returns (parsed JSON, seconds the LLM took)."""
     who = (f"The visitor is already known as {known_name}"
-           + (f", the patient's {known_relationship}" if known_relationship else "") + "."
+           + (f", the patient's {known_relationship}" if known_relationship else "")
+           + f". Use the name {known_name} in the summary."
            if known_name else "Take the visitor's name from the transcript, if they say it.")
     t = time.perf_counter()
     resp = _ollama().chat(
@@ -174,7 +188,29 @@ def repair(text: str | None, transcript: str, name: str | None) -> str | None:
         rest = m.group(2).strip()
         return f'{full} said, "{rest}"' if FIRST_PERSON.match(rest) else f"{full} {rest}"
     # a cut-off word + colon mid-sentence: "a new job in BG: next week"
-    return re.sub(r"\b([A-Za-z]{2,}):(?=\s)", lambda mm: complete(mm.group(1)) or mm.group(0), text)
+    text = re.sub(r"\b([A-Za-z]{2,}):(?=\s)", lambda mm: complete(mm.group(1)) or mm.group(0), text)
+    # a cut-off word + colon + digits: "came from Bagu:100" (times like "3:00" start with a digit, so they're safe)
+    text = re.sub(r"\b([A-Za-z]{2,}):\d+", lambda mm: complete(mm.group(1)) or mm.group(0), text)
+    # a word or short phrase doubled by the slip: "in Tagaytay Tagaytay", "church in Tagaytay church in Tagaytay"
+    return re.sub(r"\b(\w+(?:\s+\w+){0,4})(?:\s+\1\b)+", r"\1", text, flags=re.IGNORECASE)
+
+
+def fix_proper_nouns(text: str | None, transcript: str) -> str | None:
+    """Same slip, other shape: a name or place comes out misspelled ("Bagungio", "C.ceb"). Swap a capitalized
+    word that isn't in the transcript for the very close capitalized transcript word with the same first letter."""
+    if not text:
+        return text
+    said = {w.lower(): w for w in re.findall(r"\b[A-Z][A-Za-z]{2,}\b", transcript)}
+
+    def fix(m):
+        word = m.group(0)
+        core = re.sub(r"^[A-Za-z]\.", "", word)  # "C.ceb" -> "ceb"
+        if core.lower() in said:
+            return said[core.lower()] if core != word else word
+        near = difflib.get_close_matches(core.lower(), [w for w in said if w[0] == core[0].lower()], n=1, cutoff=0.84)
+        return said[near[0]] if near else word
+
+    return re.sub(r"\b[A-Z](?:\.[a-z]{2,}|[a-z]{2,})\b", fix, text)
 
 
 def clean_name(value, transcript: str) -> str | None:
@@ -201,12 +237,19 @@ def clean(result: dict, transcript: str = "", known_name: str | None = None) -> 
     who = known_name or name
     facts, seen = [], set()
     for f in result.get("facts") or []:
-        f = repair(text(f, 200), transcript, who)
+        f = depronoun(fix_proper_nouns(repair(text(f, 200), transcript, who), transcript), who)
         if f and f.lower() not in seen:
             seen.add(f.lower())
             facts.append(f)
+    summary = fix_proper_nouns(repair(text(result.get("summary"), 400), transcript, who), transcript)
+    if summary and who:  # the model fell back to "Your visitor" although the name is known
+        summary = re.sub(r"\b[Yy]our visitor\b", who, summary)
+    if summary:  # "Tita just enrolled..." - that's what the visitor calls the patient, not the visitor's name
+        title = re.match(r"^([A-Za-z]+)\b", summary)
+        if title and title.group(1).lower() in NOT_A_NAME and title.group(1).lower() not in ("visitor", "unknown"):
+            summary = (who or "Your visitor") + summary[title.end():]
     return {
-        "summary": depronoun(repair(text(result.get("summary"), 400), transcript, who), who),
+        "summary": depronoun(summary, who),
         "visitor_name": name,
         "relationship": text(result.get("relationship"), 40),
         "facts": facts[:10],
