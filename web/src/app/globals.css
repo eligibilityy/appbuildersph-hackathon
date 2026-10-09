@@ -6,7 +6,7 @@
  * Design language: flat, light-first, calm.
  * References: Linear (hairline borders, tight headings, no shadows), Grok (monochrome + one accent),
  * iOS HIG (grouped grey background, system colours, 44px tap targets, large readable type).
- * Font: Open Runde, bundled locally via @fontsource (imported in layout.tsx) — works offline.
+ * Font: Open Runde from web/fonts via next/font/local (layout.tsx) — works offline.
  */
 
 @custom-variant dark (&:is(.dark *));
@@ -14,7 +14,7 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: "Open Runde", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  --font-sans: var(--font-open-runde), system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
   --font-mono: ui-monospace, Consolas, "Courier New", monospace;
   --font-heading: var(--font-sans);
   --color-sidebar-ring: var(--sidebar-ring);
