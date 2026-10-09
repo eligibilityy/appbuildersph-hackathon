@@ -185,7 +185,7 @@ export default function PatientView() {
   }, [replay]);
 
   return (
-    <main className="fixed inset-0 flex flex-col overflow-hidden bg-background text-foreground select-none">
+    <main className="fixed inset-0 flex flex-col overflow-hidden bg-dusk text-foreground select-none">
       <header className="flex items-start justify-between gap-4 px-6 pt-5 pb-3">
         <DateClock />
         {/* Status for the caregiver, kept small: the patient doesn't need to act on it. */}
@@ -218,7 +218,7 @@ export default function PatientView() {
       >
         <div
           ref={panelRef}
-          className="relative aspect-video w-[min(100cqw,calc(100cqh*16/9))] max-w-4xl overflow-hidden rounded-[28px] bg-black ring-1 ring-black/10"
+          className="relative aspect-video w-[min(100cqw,calc(100cqh*16/9))] max-w-4xl overflow-hidden rounded-[28px] bg-black shadow-[0_30px_70px_-24px_rgb(8_20_48/0.65)] ring-1 ring-white/20"
         >
           <FaceOverlay
             videoRef={videoRef}

@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
@@ -19,8 +19,24 @@ const openRunde = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "Memory Aid",
-  description: "On-device face memory aid",
+  title: { default: "Crouie", template: "%s · Crouie" },
+  description:
+    "Crouie helps people with dementia remember who's visiting. It recognizes faces, listens, and gently " +
+    "reminds them who's there. Everything runs on this laptop, even with Wi-Fi off.",
+  applicationName: "Crouie",
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/favicon-32x32.png", sizes: "32x32", type: "image/png" },
+      { url: "/favicon-16x16.png", sizes: "16x16", type: "image/png" },
+    ],
+    apple: { url: "/apple-touch-icon.png", sizes: "180x180" },
+  },
+  manifest: "/site.webmanifest",
+};
+
+export const viewport: Viewport = {
+  themeColor: "#2a9dff",
 };
 
 export default function RootLayout({
