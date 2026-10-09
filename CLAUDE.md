@@ -20,7 +20,7 @@ A local-AI memory aid for people with dementia. A camera recognizes the people w
 
 ## Target hardware (design for this)
 
-- 16 GB RAM, **NVIDIA GTX 1650 (4 GB VRAM)**, likely Windows (confirm with the team).
+- **Demo laptop: NVIDIA RTX 3050 Ti Laptop GPU (4 GB VRAM)**, Windows (rdean123's). Design reference / budget target: 16 GB RAM, **GTX 1650 (4 GB VRAM)**. Both are 4 GB VRAM, so the model choices below apply to both. Final performance numbers are measured on the demo laptop.
 - Rule: **only the LLM uses the GPU** (via Ollama, which bundles CUDA). Faces, Whisper, and TTS run on **CPU**. Do not set up CUDA/cuDNN for onnxruntime or CTranslate2 unless explicitly asked.
 - Must also work CPU-only (fallback config below). "Runs on a budget laptop" is a pitch point.
 

@@ -111,15 +111,15 @@ Everything runs locally, so the AI model files have to be on the laptop. Each is
 |---|---|---|---|---|
 | InsightFace `buffalo_s` | Face detection + recognition | ~160 MB (measured) | `~/.insightface/models/buffalo_s` | Milestone 1 (now) |
 | Piper `en_US-lessac-medium` | Text-to-speech (the voice) | ~60 MB (approx.) | repo `models/` folder | Milestone 2 |
-| faster-whisper `small` | Speech-to-text | ~0.5 GB (approx.) | `~/.cache/huggingface/hub` | Milestone 2 |
+| faster-whisper `base` | Speech-to-text | ~150 MB (approx.) | `~/.cache/huggingface/hub` | Milestone 2 |
 | Ollama `qwen3:4b` | Summaries, facts, names from conversations | ~2.5 GB (approx.) | `~/.ollama/models` | Milestone 3 |
 | Ollama app | Runs the LLM on the GPU | ~1 GB+ (approx.) | installed program | Milestone 3 |
 
-**Smaller fallbacks** for weaker laptops or slow internet:
+**Higher-accuracy option** for faster laptops with more disk space:
 
 | Instead of | Use | Size (approx.) | Trade-off |
 |---|---|---|---|
-| Whisper `small` | Whisper `base` | ~150 MB | Less accurate, especially Taglish |
+| Whisper `base` | Whisper `small` | ~0.5 GB | More accurate, especially Taglish |
 | `qwen3:4b` | `qwen3:1.7b` | ~1.4 GB | Weaker at pulling out names and facts |
 
 *(Approximate sizes will be replaced with measured ones once downloaded.)*
@@ -129,9 +129,9 @@ Everything runs locally, so the AI model files have to be on the laptop. Each is
 | Laptop / role | Faces | Piper voice | Whisper | Ollama + LLM | Total (approx.) |
 |---|---|---|---|---|---|
 | **Frontend / UI work** (pages, dashboard) | ✅ | — | — | — | ~160 MB |
-| **Audio work** (mic, transcripts, voice) | ✅ | ✅ | ✅ `small` (or `base`) | — | ~0.7 GB |
+| **Audio work** (mic, transcripts, voice) | ✅ | ✅ | ✅ `base` | — | ~0.4 GB |
 | **LLM / memory work** | ✅ | — | — | ✅ `qwen3:1.7b` is fine for development | ~2.5 GB |
-| **🎤 Demo laptop** | ✅ | ✅ | ✅ `small` | ✅ `qwen3:4b` **and** `qwen3:1.7b` as backup | ~5 GB |
+| **🎤 Demo laptop** | ✅ | ✅ | ✅ `base` | ✅ `qwen3:4b` **and** `qwen3:1.7b` as backup | ~4.7 GB |
 
 The server only loads a model when the feature that needs it runs. For example, if you're working on the UI, the server runs without the Whisper or LLM models downloaded.
 
@@ -151,7 +151,7 @@ This saves `en_US-lessac-medium.onnx` and `en_US-lessac-medium.onnx.json` into `
 ```powershell
 .\.venv\Scripts\python -c "import os; os.environ['HF_HUB_OFFLINE']='0'; from faster_whisper import WhisperModel; WhisperModel('small', device='cpu', compute_type='int8')"
 ```
-Replace `'small'` with `'base'` for the smaller model.
+The application defaults to `base`. Set `WHISPER_MODEL=small` for better accuracy if the laptop has extra disk space.
 
 **Ollama + LLM:** install Ollama from https://ollama.com/download, then:
 ```powershell
@@ -182,13 +182,13 @@ Model files are just files. Once one person has them, copy these folders to the 
 | Model | Windows | macOS / Linux |
 |---|---|---|
 | Faces | `C:\Users\<you>\.insightface\models\buffalo_s\` | `~/.insightface/models/buffalo_s/` |
-| Whisper | `C:\Users\<you>\.cache\huggingface\hub\models--Systran--faster-whisper-small\` | `~/.cache/huggingface/hub/models--Systran--faster-whisper-small/` |
+| Whisper | `C:\Users\<you>\.cache\huggingface\hub\models--Systran--faster-whisper-base\` | `~/.cache/huggingface/hub/models--Systran--faster-whisper-base/` |
 | Piper voice | `<repo>\models\en_US-lessac-medium.onnx` + `.onnx.json` | `<repo>/models/` (same files) |
 | Ollama LLMs | `C:\Users\<you>\.ollama\models\` (copy the whole folder: `blobs` + `manifests`) | `~/.ollama/models/` |
 
 Notes:
 - **Ollama:** the receiving laptop still needs the Ollama app installed (~1 GB installer, which can also go on the USB). Quit Ollama before copying the `models` folder in. Then check that `ollama list` shows the models.
-- **Whisper `base`:** the folder is `models--Systran--faster-whisper-base`.
+- **Whisper `small`:** the folder is `models--Systran--faster-whisper-small`.
 - **Disk space:** `buffalo_s.zip` in `~/.insightface/models/` can be deleted after the first run.
 
 ---
@@ -440,16 +440,21 @@ git push -u origin your-feature  # then open a PR; the lead merges into main
 
 ## Hardware
 
-Development/demo laptop: Intel Core i5-12450H, 16 GB RAM, NVIDIA GTX 1650 (4 GB VRAM), Windows 11.
+| Machine | CPU / RAM | GPU | Role |
+|---|---|---|---|
+| **Demo laptop** | *(fill in)* | NVIDIA RTX 3050 Ti Laptop GPU (4 GB VRAM) | Stage demo, checkpoint tests, final measurements |
+| Development laptop | Intel Core i5-12450H, 16 GB RAM | NVIDIA GTX 1650 (4 GB VRAM) | Development; backup demo machine |
+
+Both have 4 GB of VRAM, so the same models run on both: the LLM on the GPU, everything else on the CPU. "Runs on a budget laptop" refers to this 4 GB-VRAM class.
 
 ### Measured performance
 
-Only numbers we actually measured. More will be added as we test.
+Only numbers we actually measured, with the machine they were measured on. Final numbers will come from the demo laptop.
 
 | What | Result | Conditions |
 |---|---|---|
-| Face detect + embed, 1 face | ~40–60 ms per frame | 640×480 test image, CPU (`buffalo_s`, det size 320), i5-12450H |
-| Face model load (cached) | ~1–2 s | same laptop |
+| Face detect + embed, 1 face | ~40–60 ms per frame | Development laptop (i5-12450H), CPU, `buffalo_s`, det size 320, 640×480 test image |
+| Face model load (cached) | ~1–2 s | Development laptop |
 
 ---
 
@@ -461,7 +466,7 @@ Models, frameworks, and tools used. This list will be finalized before submissio
 |---|---|---|
 | [InsightFace](https://github.com/deepinsight/insightface) `buffalo_s` (SCRFD detector + ArcFace recognizer) | Face detection + embeddings | Model weights are licensed for **non-commercial research use only** |
 | ONNX Runtime | Runs the face models on CPU | MIT |
-| [faster-whisper](https://github.com/SYSTRAN/faster-whisper) `small` (planned) | Speech-to-text | MIT (Whisper weights: MIT) |
+| [faster-whisper](https://github.com/SYSTRAN/faster-whisper) `base` | Speech-to-text | MIT (Whisper weights: MIT) |
 | [Ollama](https://ollama.com) + Qwen3 4B (planned) | Memory extraction from transcripts | Qwen3: Apache 2.0 |
 | [Piper](https://github.com/OHF-Voice/piper1-gpl) `en_US-lessac-medium` (planned) | Text-to-speech | `piper-tts` library: GPL-3.0; voice: see its model card |
 | FastAPI, Uvicorn, NumPy, OpenCV, SQLite | Backend | open source |
