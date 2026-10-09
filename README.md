@@ -222,7 +222,11 @@ Then open Chrome:
 | Patient view | http://localhost:3000/ | Full-screen camera, floating name tags (tap one for a profile card), big name card, "Who's this?" button (or spacebar) |
 | Caregiver | http://localhost:3000/caregiver | List of people, name the "Unknown #N" faces, delete people |
 
-Stop either one with **Ctrl+C**. Stage demo: `chrome --app=http://localhost:3000` (or `--kiosk`).
+Stop either one with **Ctrl+C**. Stage demo:
+```powershell
+start chrome --app=http://localhost:3000 --autoplay-policy=no-user-gesture-required
+```
+(add `--kiosk` for full screen). Without the autoplay flag, Chrome stays silent until someone clicks or presses a key on the page once. The patient view shows **Tap to turn on sound** when that happens, and the first tap plays the brief that was blocked.
 
 ### Quick test
 
@@ -297,8 +301,8 @@ web/src/
   components/CameraCapture.tsx Manual guided photo capture, used by "Add photos"
   components/AutoEnrollCamera.tsx  Hands-free enrollment camera + holographic scan overlay
   components/FaceOverlay.tsx   Video + scan visuals + clickable name tags (no boxes)
-  components/NameCard.tsx      Big name card
-  components/patient/          WhoButton, CameraErrorCard, PersonProfileCard (opened from a name tag)
+  components/patient/          SpeechBubble (spoken brief beside the visitor's face), DateClock, WhoButton,
+                               CameraErrorCard, PersonProfileCard (opened from a name tag)
   components/caregiver/        PersonCard, MergeControl, AddPhotosDialog, EditPersonDialog
   lib/api.ts                   Typed REST calls (people, enroll, addPhotos, merge, ...)
   lib/server.ts                Server URL, WebSocket hook with auto-reconnect, shared types
@@ -307,7 +311,9 @@ web/src/
   lib/nameTags.ts              Name tag + scan layout and animation (pure, unit-tested)
   lib/holo.ts                  Holographic canvas drawing (scan line, oval, progress, turn arrows)
   lib/profile.ts               What the profile card shows (only saved data)
-  lib/audio.ts                 Plays the spoken brief; mic capture goes here later
+  lib/audio.ts                 Plays the spoken brief (with autoplay-blocked handling) + mic PCM capture
+  lib/bubble.ts                Where the speech bubble goes so it never covers the face (pure, unit-tested)
+  lib/useWakeLock.ts           Keeps the screen on while the patient view is open
   lib/format.ts                "5 min ago", initials
 
 models/              Piper voice files go here

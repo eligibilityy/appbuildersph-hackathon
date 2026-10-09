@@ -77,6 +77,7 @@ class VisitLifecycleTests(unittest.TestCase):
             "type": "speak",
             "text": "This is Miguel, your grandson.",
             "audio_url": "/tts/1.wav",
+            "person_id": known_id,
         }])
 
     def test_returning_brief_uses_name_and_previous_closed_visit_time(self):
@@ -92,6 +93,17 @@ class VisitLifecycleTests(unittest.TestCase):
         elapsed.assert_called_once_with("2026-10-09T09:30:00+00:00")
         self.assertNotIn("he", text.lower())
         self.assertNotIn("she", text.lower())
+
+    def test_replay_during_first_visit_doesnt_count_the_current_sighting(self):
+        person_id = people.create_person("Miguel", "grandson")
+        with db.connect() as c:
+            c.execute("INSERT INTO visits (person_id, started_at) VALUES (?, ?)", (person_id, "2026-10-09T10:00:00+00:00"))
+            c.execute("UPDATE people SET last_seen_at = ? WHERE id = ?", ("2026-10-09T10:00:05+00:00", person_id))
+        self.assertEqual(visits.brief_text(person_id), "This is Miguel, your grandson.")
+        with db.connect() as c:  # seen before this visit began (e.g. appearance history): that one counts
+            c.execute("UPDATE people SET last_seen_at = ? WHERE id = ?", ("2026-10-09T09:00:00+00:00", person_id))
+        with patch.object(visits, "humanized_elapsed", return_value="1 hour"):
+            self.assertEqual(visits.brief_text(person_id), "This is Miguel, your grandson. You last saw Miguel 1 hour ago.")
 
     def test_elapsed_time_formatting(self):
         now = visits.datetime(2026, 10, 9, 10, 5, tzinfo=visits.timezone.utc)

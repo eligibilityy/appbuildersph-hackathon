@@ -186,7 +186,7 @@ One module per feature, each with one owner (see `docs/TEAM_PLAN.md`). Keep new 
 ```
 /web/src
   app/            pages: / (patient), /enroll, /caregiver — keep thin
-  components/     FaceOverlay, NameCard, caregiver/PersonCard
+  components/     FaceOverlay, patient/SpeechBubble, caregiver/PersonCard
   lib/            api.ts (typed REST), server.ts (WS hook + types), camera.ts, audio.ts
 /server
   main.py         wires features together (thin)
