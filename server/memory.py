@@ -1,4 +1,4 @@
-"""Memory extraction with Ollama (GPU) on a worker thread. Owner: lead (block 3).
+"""Memory extraction with Ollama (GPU) on a worker thread.
 
   start()            background worker reading a queue (and re-queues finished visits never processed)
   enqueue(visit_id)  called by visits.py when a visit ends

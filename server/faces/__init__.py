@@ -1,4 +1,4 @@
-"""Face recognition — the core feature. Owner: face recognition member.
+"""Face recognition — the core feature.
 
 engine.py   model load, detect/embed, gallery + matching, enroll / add photos / merge
 tracker.py  follows faces across frames, confirms identity, creates "Unknown #N"

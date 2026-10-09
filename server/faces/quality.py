@@ -60,6 +60,3 @@ def check(face, img_bgr, strict: bool = False) -> str | None:
         return "head tilted too far up or down"
     return None
 
-
-def is_good(face, img_bgr) -> bool:
-    return check(face, img_bgr) is None

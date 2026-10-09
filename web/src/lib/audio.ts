@@ -56,10 +56,6 @@ export function playSpeech(audioUrl: string) {
   playAudio(new Audio(`${serverUrl()}${audioUrl}`));
 }
 
-export function playLocalRecording(dataUrl: string) {
-  playAudio(new Audio(dataUrl));
-}
-
 export function isSpeaking() {
   return Date.now() < speakingUntil;
 }
