@@ -10,8 +10,6 @@ A camera recognizes the people who visit a patient with dementia, listens to the
 
 **Everything runs on the laptop: faces, speech-to-text, the LLM and the voice. It works with Wi-Fi off.** Hackathon theme: Local AI.
 
-**Demo video:** *(link added at submission)*
-
 ---
 
 ## What it does
@@ -37,7 +35,7 @@ We built and tested this on **Windows 11** (PowerShell). macOS/Linux commands ar
 
 | | |
 |---|---|
-| **Hardware** | Laptop with a webcam and a mic. An **NVIDIA GPU with 4 GB VRAM** is what we used (GTX 1650 and RTX 3050 Ti); only the LLM uses it. 16 GB RAM. About **5 GB free disk** for the models. |
+| **Hardware** | Laptop with a webcam and a mic. An **NVIDIA GPU with 4 GB VRAM** is what we used (GTX 1650); only the LLM uses it. 16 GB RAM. About **5 GB free disk** for the models. |
 | **Software** | [Python **3.11**](https://www.python.org/downloads/) (we used 3.11.5) · [Node.js **20+**](https://nodejs.org) (we used 22.19) · [Git](https://git-scm.com) · [Google Chrome](https://www.google.com/chrome/) · [Ollama](https://ollama.com/download) |
 | **Internet** | Only for steps 1–4 (one-time downloads). After that, everything runs offline. |
 
@@ -231,8 +229,7 @@ Model names live in `server/config.py`. Override them per laptop without editing
 
 | Machine | CPU / RAM | GPU | Role |
 |---|---|---|---|
-| **Demo laptop** (rdean123) | *(added from the final demo run)* | NVIDIA RTX 3050 Ti Laptop GPU, 4 GB VRAM | Stage demo |
-| Development laptop | Intel Core i5-12450H, 16 GB RAM | NVIDIA GTX 1650, 4 GB VRAM | Development, backup demo machine |
+| Development laptop | Intel Core i5-12450H, 16 GB RAM | NVIDIA GTX 1650, 4 GB VRAM | Development and testing |
 
 **Only numbers we actually measured**, with where and how. They come from the server's console log lines (`[faces]`, `[audio]`, `[memory]`, `[ask]`, `[tts]`) and our test tools.
 
@@ -241,17 +238,13 @@ Model names live in `server/config.py`. Override them per laptop without editing
 | Face detect + embed, 1 face | 40–60 ms per frame | Dev laptop, CPU, det size 320, 640×480 test image |
 | Face detect + embed, during full-app tests | 183–306 ms mean per frame | Dev laptop, det size 480, while also running the web app, a test browser and the LLM (RAM ~96% used) |
 | Model warm-up at server start | Piper 7.4–8.9 s · Whisper `base` 2.1–5.0 s · Qwen3 4B 10.6–14.1 s | Dev laptop |
-| Model warm-up at server start | Faces 0.7 s · Piper 3.13 s · Whisper `base` 0.71 s | **Demo laptop** (one startup). Qwen3 4B reported 0.11 s there because Ollama already had it in memory, so that's not a load time |
 | Piper: speak one brief | 0.2–1.0 s | Dev laptop, CPU, after warm-up |
 | Whisper `base`: 5 s of speech | 0.8–1.7 s | Dev laptop, CPU, int8 |
 | Live captions: first caption after speech starts | 7.0 s (was 14.6 s with 12 s chunks) | Dev laptop, 25.6 s of speech fed in real time |
 | Qwen3 4B: summary + facts for one visit | 13.7–18 s | Dev laptop. `ollama ps`: 67% GPU / 33% CPU (the model doesn't fully fit next to Windows) |
 | Qwen3 1.7B: same task | 9.4–9.5 s | Dev laptop, 100% GPU, same summary for the demo line |
-| Qwen3 4B: summary + facts, warm | 2.6–3.0 s (first call ~8 s) | rdean123's RTX 3050 Ti laptop, measured by him (`ollama ps`: 67% GPU) |
 | Ask about your people (Qwen3 4B) | 13–24 s if the question names someone, ~40 s otherwise | Dev laptop, 67% GPU |
 | Visitor leaves → memory saved | ~20–22 s (Whisper flush + LLM) | Dev laptop, `tools/try_loop.py`, model warm |
-
-*(Final demo-laptop numbers are added from the stage-run logs.)*
 
 ---
 
@@ -381,7 +374,7 @@ web/                         Next.js 15, React 19, Tailwind 4, shadcn/ui
 | GitHub | Built |
 |---|---|
 | [eligibilityy](https://github.com/eligibilityy) | Web app and UI, integration, Ask panel, README |
-| [rdean123](https://github.com/rdean123) | Face recognition and enrollment, memory extraction (Ollama), demo laptop |
+| [rdean123](https://github.com/rdean123) | Face recognition and enrollment, memory extraction (Ollama) |
 | [ryuuu924](https://github.com/ryuuu924) | Visits and the spoken brief |
 | [ranzxgit](https://github.com/ranzxgit) | Piper voice, mic capture and Whisper transcription |
 
