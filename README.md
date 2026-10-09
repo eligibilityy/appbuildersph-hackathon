@@ -402,7 +402,8 @@ The full message protocol for upcoming milestones is in `CLAUDE.md`.
 | `RULES` in `web/src/lib/autoCapture.ts` | — | Auto-capture: how steady (`STABLE_FRAMES`), how centred and large, how far to turn (`TURN_MIN_YAW`). |
 | `CONFIRM_FRAMES` | 5 | Names take too long to appear → lower it. |
 | `UNKNOWN_MIN_FACE_PX` | 60 | Strangers far from the camera never get saved → lower it. |
-| `VISIT_END_SECONDS` | 30 | For the stage demo, set the env var `VISIT_END_SECONDS=10`. |
+| `VISIT_END_SECONDS` | 30 | For the stage demo, set the env var `VISIT_END_SECONDS=5`: the summary starts 5 s after the visitor leaves. Too short and a face that drops out briefly starts a new visit. |
+| `TRANSCRIBE_EVERY_SECONDS` | 5 | How often live captions update while a visit is open. Chunks are cut at a pause, so words stay whole. Raise it on a slow CPU. |
 | `WHISPER_LANGUAGE` | `tl` | Tagalog: handles Tagalog, Taglish and English. `auto` = let Whisper detect the language. |
 
 ---
