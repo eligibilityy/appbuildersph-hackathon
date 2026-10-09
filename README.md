@@ -6,7 +6,7 @@ A camera recognizes the people who visit a patient with dementia, listens to the
 
 **Everything runs on the laptop. The app works with Wi-Fi off.** Built for the AppBuildersPH Hackathon 2026 (theme: Local AI).
 
-> **Teammates:** who does what, the feature order and the timetable are in [`docs/TEAM_PLAN.md`](docs/TEAM_PLAN.md). The full spec (architecture, protocol, schema, rules) is in [`CLAUDE.md`](CLAUDE.md). This README is the "how do I run and work on it" guide.
+> **Teammates:** who does what, the feature order and the timetable are in [`docs/TEAM_PLAN.md`](docs/TEAM_PLAN.md). Demo laptop test steps: [`docs/DEMO_TEST.md`](docs/DEMO_TEST.md). The full spec (architecture, protocol, schema, rules) is in [`CLAUDE.md`](CLAUDE.md). This README is the "how do I run and work on it" guide.
 
 ---
 
@@ -270,6 +270,7 @@ The code is split **one module per feature**, so each teammate works in their ow
 CLAUDE.md            Full spec: architecture, WebSocket protocol, DB schema, rules
 README.md            This file
 docs/TEAM_PLAN.md    Feature order, timetable, who owns which files, git rules
+docs/DEMO_TEST.md    Demo laptop: update, model checks, offline run, demo + Tagalog test
 .gitignore           Keeps server/data/, .venv/, node_modules/ out of git
 
 server/
