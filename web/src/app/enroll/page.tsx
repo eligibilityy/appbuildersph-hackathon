@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRef, useState } from "react";
 import { dataUrlToBlob, grabFrame, useCamera } from "@/lib/camera";
-import { serverUrl } from "@/lib/server";
+import { api } from "@/lib/api";
 
 const STEPS = [
   "Look straight at the camera",
@@ -44,15 +44,9 @@ export default function EnrollPage() {
     if (!name.trim()) return setStatus({ kind: "error", msg: "Please enter a name." });
     if (shots.length < 3) return setStatus({ kind: "error", msg: "Capture at least 3 photos." });
     setStatus({ kind: "saving" });
-    const form = new FormData();
-    form.append("name", name.trim());
-    form.append("relationship", relationship.trim());
-    shots.forEach((s, i) => form.append("images", dataUrlToBlob(s), `shot${i + 1}.jpg`));
     try {
-      const res = await fetch(`${serverUrl()}/enroll`, { method: "POST", body: form });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.detail ?? res.statusText);
-      setStatus({ kind: "ok", msg: `Saved ${body.name}.` });
+      const person = await api.enroll(name.trim(), relationship.trim(), shots.map(dataUrlToBlob));
+      setStatus({ kind: "ok", msg: `Saved ${person.name}.` });
       setShots([]);
       setName("");
       setRelationship("");
