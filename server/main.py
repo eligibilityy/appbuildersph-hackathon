@@ -10,6 +10,7 @@ import config  # noqa: F401  (sets offline env vars before model libs load)
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+import audio
 import db
 import hub
 import memory
@@ -28,21 +29,28 @@ async def lifespan(app: FastAPI):
     hub.engine = FaceEngine()
     if config.FEATURES["memory"]:
         memory.start()
-    if config.FEATURES["tts"]:
-        if tts.available():
-            threading.Thread(target=_warm_tts, name="piper-warmup", daemon=True).start()
-        else:
-            print(f"[tts] voice missing: {config.PIPER_VOICE} (see README > Models). Briefs will be text only.")
+    if config.FEATURES["tts"] and not tts.available():
+        print(f"[tts] voice missing: {config.PIPER_VOICE} (see README > Models). Briefs will be text only.")
+    # Load the models in the background now, so the first visit doesn't wait for them.
+    threading.Thread(target=_warm_models, name="model-warmup", daemon=True).start()
     enabled = [name for name, on in config.FEATURES.items() if on]
     print(f"[server] features: faces, {', '.join(enabled) or '(none else)'}")
     yield
 
 
-def _warm_tts():
-    try:
-        tts.warm_up()
-    except Exception as e:
-        print(f"[tts] warm-up failed: {e!r}")
+def _warm_models():
+    steps = []
+    if config.FEATURES["tts"] and tts.available():
+        steps.append(("tts", tts.warm_up))
+    if config.FEATURES["audio"]:
+        steps.append(("audio", audio.warm_up))
+    if config.FEATURES["memory"]:
+        steps.append(("memory", memory.warm_up))
+    for name, warm in steps:  # one at a time: they compete for the same CPU
+        try:
+            warm()
+        except Exception as e:
+            print(f"[{name}] warm-up failed: {e!r}")
 
 
 app = FastAPI(lifespan=lifespan)

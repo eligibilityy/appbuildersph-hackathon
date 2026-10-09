@@ -40,6 +40,13 @@ def _get_model():
     return _whisper
 
 
+def warm_up() -> None:
+    """Load Whisper at startup (off the main thread), so the first visit's captions aren't late."""
+    started = time.perf_counter()
+    _get_model()
+    print(f"[audio] Whisper {config.WHISPER_MODEL} ready in {time.perf_counter() - started:.2f}s", flush=True)
+
+
 def _take_locked(min_bytes: int):
     """Hand the whole buffer to one transcription job (call with _lock held)."""
     global _worker_active

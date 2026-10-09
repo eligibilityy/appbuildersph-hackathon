@@ -75,6 +75,14 @@ def start() -> None:
     print(f"[memory] worker started ({config.OLLAMA_MODEL}); {len(pending)} unprocessed visit(s) queued")
 
 
+def warm_up() -> None:
+    """Load the model into VRAM at startup (keep_alive=-1 keeps it there), so the first visit's
+    summary doesn't wait for the model load. Run off the main thread."""
+    started = time.perf_counter()
+    _ollama().generate(model=config.OLLAMA_MODEL, prompt="", keep_alive=config.OLLAMA_KEEP_ALIVE)
+    print(f"[memory] {config.OLLAMA_MODEL} loaded in {time.perf_counter() - started:.2f}s", flush=True)
+
+
 def enqueue(visit_id: int) -> None:
     """Queue a finished visit for summary + fact extraction."""
     if _worker is None:
