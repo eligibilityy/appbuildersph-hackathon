@@ -105,6 +105,9 @@ def main():
         r = httpx.post(f"{BASE}/enroll", data={"name": "Tom", "relationship": "friend"}, files=files, timeout=60)
         check("enroll with 3 single-face photos", r.status_code == 200, r.text)
         tom_id = r.json().get("id")
+        registration = httpx.get(f"{BASE}/people/{tom_id}").json()
+        registered_at = registration.get("registered_at")
+        check("registration timestamp is timezone-aware", bool(registered_at and registered_at.endswith("+00:00")))
 
         r = httpx.post(f"{BASE}/enroll", data={"name": "X"}, files=files[:2], timeout=60)
         check("enroll rejects 2 photos", r.status_code == 400, r.text)
@@ -128,6 +131,10 @@ def main():
             async with websockets.connect(WS, max_size=None) as ws:
                 faces = await send_frames(ws, tom_jpg, 7)
                 check("enrolled face recognized", len(faces) == 1 and faces[0]["name"] == "Tom", faces)
+                detail = httpx.get(f"{BASE}/people/{tom_id}").json()
+                check("confirmed repeated frames create one hourly appearance",
+                      len(detail.get("appearances", [])) == 1 and detail.get("first_seen_at") is not None,
+                      detail.get("appearances"))
 
                 await send_frames(ws, blank_jpg, 12)  # Tom leaves; tracks expire
                 faces = await send_frames(ws, group_jpg, 7)
@@ -161,15 +168,24 @@ def main():
         check("merge Unknown into Tom moves their faces",
               r.status_code == 200 and tom_after["embedding_count"] == 10, r.text)
         check("merged Unknown is gone", httpx.get(f"{BASE}/people/{unknown['id']}").status_code == 404)
+        merged_detail = httpx.get(f"{BASE}/people/{tom_id}").json()
+        check("merge consolidates same-hour appearance rows",
+              len(merged_detail.get("appearances", [])) == 1, merged_detail.get("appearances"))
 
         r = httpx.patch(f"{BASE}/people/{tom_id}", json={"relationship": "old friend"})
         check("edit relationship", r.status_code == 200 and r.json()["relationship"] == "old friend", r.text)
+        check("editing preserves registration timestamp",
+              httpx.get(f"{BASE}/people/{tom_id}").json().get("registered_at") == registered_at)
 
         print("Persistence")
         stop_server(proc)
         proc = start_server(data_dir, log)
         h = httpx.get(f"{BASE}/health").json()
         check("data survives a restart", h["people"] == 6 and h["embeddings"] == 35, h)
+        persisted_detail = httpx.get(f"{BASE}/people/{tom_id}").json()
+        check("registration and appearance history survive restart",
+              persisted_detail.get("registered_at") == registered_at
+              and len(persisted_detail.get("appearances", [])) == 1)
 
         r = httpx.delete(f"{BASE}/people/{tom_id}")
         check("delete person", r.status_code == 200 and httpx.get(f"{BASE}/people/{tom_id}").status_code == 404)

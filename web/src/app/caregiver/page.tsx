@@ -1,19 +1,27 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { UserPlus, Users } from "lucide-react";
 import AppHeader from "@/components/app/AppHeader";
 import PersonCard from "@/components/caregiver/PersonCard";
+import PersonDetail from "@/components/caregiver/PersonDetail";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { api } from "@/lib/api";
+import { api, PersonDetail as PersonRecord } from "@/lib/api";
 import { Person, ServerEvent, useServerSocket } from "@/lib/server";
 
 export default function CaregiverPage() {
   const [people, setPeople] = useState<Person[] | null>(null); // null = loading
   const [version, setVersion] = useState(0); // cache-bust thumbnails
   const [error, setError] = useState<string | null>(null);
+
+  // Detail view (one person: registration, appearance history, last 24 hours).
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [detail, setDetail] = useState<PersonRecord | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const detailRequest = useRef(0); // ignore responses from older requests
 
   const load = useCallback(async () => {
     try {
@@ -29,17 +37,79 @@ export default function CaregiverPage() {
     load();
   }, [load]);
 
-  // Refresh whenever the server says something changed (new Unknown, enrollment, merge...).
+  const loadDetail = useCallback(async (personId: number) => {
+    const requestId = ++detailRequest.current;
+    setSelectedId(personId);
+    setDetailLoading(true);
+    setDetailError(null);
+    try {
+      const result = await api.person(personId);
+      if (detailRequest.current === requestId) setDetail(result);
+    } catch (e) {
+      if (detailRequest.current === requestId) {
+        setDetail(null);
+        setDetailError(e instanceof Error ? e.message : "Person details are unavailable.");
+      }
+    } finally {
+      if (detailRequest.current === requestId) setDetailLoading(false);
+    }
+  }, []);
+
+  function openDetail(p: Person) {
+    setDetail(null);
+    loadDetail(p.id);
+    window.scrollTo({ top: 0 });
+  }
+
+  function closeDetail() {
+    detailRequest.current += 1;
+    setSelectedId(null);
+    setDetail(null);
+    setDetailError(null);
+    setDetailLoading(false);
+  }
+
+  // Refresh whenever the server says something changed (new Unknown, enrollment, merge, new appearance).
   const onEvent = useCallback(
     (e: ServerEvent) => {
-      if (e.type === "memory_updated") load();
+      if (e.type === "memory_updated" || e.type === "appearance_updated") {
+        load();
+        if (selectedId === e.person_id) loadDetail(e.person_id);
+      }
     },
-    [load],
+    [load, loadDetail, selectedId],
   );
   useServerSocket(onEvent);
 
   const unknown = useMemo(() => (people ?? []).filter((p) => p.is_unknown), [people]);
   const known = useMemo(() => (people ?? []).filter((p) => !p.is_unknown), [people]);
+
+  if (selectedId !== null) {
+    return (
+      <>
+        <AppHeader />
+        <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6" aria-live="polite">
+          {detail ? (
+            <PersonDetail person={detail} version={version} onBack={closeDetail} />
+          ) : detailLoading ? (
+            <DetailSkeleton />
+          ) : (
+            <div className="mx-auto flex max-w-4xl flex-col items-start gap-3">
+              <p role="alert" className="w-full rounded-xl bg-destructive/10 p-4 text-body text-destructive">
+                {detailError ? `Unable to load this person: ${detailError}` : "This person may have been deleted."}
+              </p>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={closeDetail}>
+                  Back to people
+                </Button>
+                {detailError && <Button onClick={() => loadDetail(selectedId)}>Retry</Button>}
+              </div>
+            </div>
+          )}
+        </main>
+      </>
+    );
+  }
 
   return (
     <>
@@ -75,7 +145,14 @@ export default function CaregiverPage() {
             description="Faces the app saw but doesn't know yet. Say who they are, or merge them into someone you added."
           >
             {unknown.map((p) => (
-              <PersonCard key={p.id} p={p} version={version} knownPeople={known} onChanged={load} />
+              <PersonCard
+                key={p.id}
+                p={p}
+                version={version}
+                knownPeople={known}
+                onChanged={load}
+                onSelect={openDetail}
+              />
             ))}
           </Section>
         )}
@@ -85,12 +162,37 @@ export default function CaregiverPage() {
             {known.length === 0 ? (
               <EmptyState />
             ) : (
-              known.map((p) => <PersonCard key={p.id} p={p} version={version} knownPeople={known} onChanged={load} />)
+              known.map((p) => (
+                <PersonCard
+                  key={p.id}
+                  p={p}
+                  version={version}
+                  knownPeople={known}
+                  onChanged={load}
+                  onSelect={openDetail}
+                />
+              ))
             )}
           </Section>
         )}
       </main>
     </>
+  );
+}
+
+function DetailSkeleton() {
+  return (
+    <div className="mx-auto flex max-w-4xl flex-col gap-6">
+      <Skeleton className="h-9 w-28" />
+      <div className="flex items-center gap-5 rounded-2xl border bg-card p-5">
+        <Skeleton className="size-20 rounded-full" />
+        <div className="flex flex-1 flex-col gap-2">
+          <Skeleton className="h-8 w-1/2" />
+          <Skeleton className="h-4 w-1/4" />
+        </div>
+      </div>
+      <Skeleton className="h-40 rounded-2xl" />
+    </div>
   );
 }
 

@@ -13,7 +13,28 @@ export type Visit = {
 
 export type Fact = { id: number; person_id: number; visit_id: number; fact: string; created_at: string };
 
-export type PersonDetail = Person & { visits: Visit[]; facts: Fact[]; embedding_count: number };
+export type Appearance = {
+  id: number;
+  person_id: number;
+  hour_bucket: string;
+  first_seen_at: string;
+  last_seen_at: string;
+  source: "automatic" | "manual" | "mixed";
+};
+
+export type HourlyStatus = {
+  hour_bucket: string;
+  status: "seen" | "not_seen" | "monitoring_unavailable";
+  in_progress: boolean;
+};
+
+export type PersonDetail = Person & {
+  visits: Visit[];
+  facts: Fact[];
+  appearances: Appearance[];
+  hourly_status: HourlyStatus[];
+  embedding_count: number;
+};
 
 /** Someone already saved that new enrollment photos (or the name) probably belong to. */
 export type DuplicateCandidate = {

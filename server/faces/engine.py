@@ -50,10 +50,12 @@ def add_embeddings(person_id: int, embs: list[np.ndarray]):
 
 def create_person_with_embeddings(name, relationship, is_unknown, name_source, embs) -> int:
     """Person row + all their embeddings in ONE transaction, so a failure never leaves a face-less person."""
+    created_at = db.now()
     with db.connect() as c:
         cur = c.execute(
-            "INSERT INTO people (name, relationship, is_unknown, name_source, created_at) VALUES (?,?,?,?,?)",
-            (name, relationship, int(is_unknown), name_source, db.now()),
+            """INSERT INTO people (name, relationship, is_unknown, name_source, created_at, registered_at)
+               VALUES (?,?,?,?,?,?)""",
+            (name, relationship, int(is_unknown), name_source, created_at, created_at),
         )
         pid = cur.lastrowid
         c.executemany(
@@ -84,10 +86,39 @@ def count_embeddings(person_id: int) -> int:
 
 
 def move_person_data(source_id: int, into_id: int):
-    """Merge: move embeddings, visits and facts from source to target, then delete source."""
+    """Merge all history into the target, consolidating person-hour appearance rows."""
     with db.connect() as c:
         for table in ("face_embeddings", "visits", "facts"):
             c.execute(f"UPDATE {table} SET person_id = ? WHERE person_id = ?", (into_id, source_id))
+        source_appearances = c.execute(
+            "SELECT * FROM appearances WHERE person_id = ?", (source_id,)
+        ).fetchall()
+        for row in source_appearances:
+            c.execute(
+                """INSERT INTO appearances
+                   (person_id, hour_bucket, first_seen_at, last_seen_at, source)
+                   VALUES (?, ?, ?, ?, ?)
+                   ON CONFLICT(person_id, hour_bucket) DO UPDATE SET
+                     first_seen_at = MIN(appearances.first_seen_at, excluded.first_seen_at),
+                     last_seen_at = MAX(appearances.last_seen_at, excluded.last_seen_at),
+                     source = CASE WHEN appearances.source = excluded.source
+                                   THEN appearances.source ELSE 'mixed' END""",
+                (into_id, row["hour_bucket"], row["first_seen_at"], row["last_seen_at"], row["source"]),
+            )
+        c.execute("DELETE FROM appearances WHERE person_id = ?", (source_id,))
+        c.execute(
+            """UPDATE people SET
+                 first_seen_at = CASE
+                   WHEN first_seen_at IS NULL THEN (SELECT first_seen_at FROM people WHERE id = ?)
+                   WHEN (SELECT first_seen_at FROM people WHERE id = ?) IS NULL THEN first_seen_at
+                   ELSE MIN(first_seen_at, (SELECT first_seen_at FROM people WHERE id = ?)) END,
+                 last_seen_at = CASE
+                   WHEN last_seen_at IS NULL THEN (SELECT last_seen_at FROM people WHERE id = ?)
+                   WHEN (SELECT last_seen_at FROM people WHERE id = ?) IS NULL THEN last_seen_at
+                   ELSE MAX(last_seen_at, (SELECT last_seen_at FROM people WHERE id = ?)) END
+               WHERE id = ?""",
+            (source_id, source_id, source_id, source_id, source_id, source_id, into_id),
+        )
         c.execute("DELETE FROM people WHERE id = ?", (source_id,))
 
 

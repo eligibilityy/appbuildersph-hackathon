@@ -1,6 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Users } from "lucide-react";
 import ConnectionStatus from "@/components/app/ConnectionStatus";
 import FaceOverlay from "@/components/FaceOverlay";
 import NameCard from "@/components/NameCard";
@@ -92,7 +94,16 @@ export default function PatientView() {
     <main className="fixed inset-0 select-none overflow-hidden bg-black text-white">
       <FaceOverlay videoRef={videoRef} faces={faces} frameSize={frameSize} />
 
-      <ConnectionStatus online={connected} className="absolute left-4 top-4" />
+      {/* Top bar: connection status + a way to the caregiver dashboard (kept small: the patient doesn't need it). */}
+      <nav aria-label="View navigation" className="absolute left-4 top-4 z-20 flex flex-wrap items-center gap-2">
+        <ConnectionStatus online={connected} />
+        <Link
+          href="/caregiver"
+          className="inline-flex h-8 items-center gap-1.5 rounded-full border bg-card px-3 text-footnote font-medium text-muted-foreground transition-colors duration-150 outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
+        >
+          <Users className="size-3.5" /> Caregiver dashboard
+        </Link>
+      </nav>
 
       {camError && <CameraErrorCard message={camError} />}
 
