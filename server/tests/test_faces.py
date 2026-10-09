@@ -428,6 +428,98 @@ class TestWebSocketContract(FaceTestCase):
         self.assertEqual(res.present_person_ids, {pid})
 
 
+
+class TestEnrollmentGuidance(FaceTestCase):
+    """/enroll/check feeds the automatic capture: face count, box, quality and landmark head pose."""
+
+    def test_check_reports_pose_from_landmarks(self):
+        img = textured_image()
+        for yaw in (0.0, 0.3, -0.3):
+            self.app.by_image[id(img)] = [FakeFace(random_identity(), yaw=yaw)]
+            res = self.engine.check_frame(img)
+            self.assertEqual(res["faces"], 1)
+            self.assertAlmostEqual(res["pose"]["yaw"], yaw, places=2)
+            self.assertEqual(res["frame"], [640, 480])
+        self.assertTrue(self.engine.check_frame(img)["ok"] in (True, False))
+
+    def test_check_with_no_or_several_faces_has_no_pose(self):
+        img = textured_image()
+        self.app.by_image[id(img)] = []
+        self.assertEqual((self.engine.check_frame(img)["faces"], self.engine.check_frame(img)["pose"]), (0, None))
+        self.app.by_image[id(img)] = [FakeFace(random_identity()), FakeFace(random_identity(), box=(20, 20, 180, 200))]
+        res = self.engine.check_frame(img)
+        self.assertEqual((res["faces"], res["pose"], res["ok"]), (2, None, False))
+
+    def test_check_saves_nothing(self):
+        img = textured_image()
+        self.app.by_image[id(img)] = [FakeFace(random_identity())]
+        for _ in range(5):
+            self.engine.check_frame(img)
+        self.assertEqual(counts(), (0, 0))
+
+
+class TestDescriptions(FaceTestCase):
+    """The optional description lives in people.notes (existing column - no migration)."""
+
+    def setUp(self):
+        super().setUp()
+        import hub
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+        from faces import routes as face_routes
+
+        hub.engine = self.engine
+        api = FastAPI()
+        api.include_router(face_routes.router)
+        api.include_router(people.router)
+        self.client = TestClient(api)
+
+    def _post_enroll(self, name, embs, **fields):
+        imgs = photos(self.app, embs)
+        # The route decodes JPEGs itself, so register the decoded images' faces by content instead of id.
+        import cv2
+        files, faces_by_bytes = [], {}
+        for i, img in enumerate(imgs):
+            data = cv2.imencode(".png", img)[1].tobytes()
+            files.append(("images", (f"p{i}.png", data, "image/png")))
+            faces_by_bytes[cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR).tobytes()] = self.app.by_image[id(img)]
+        real_get = self.app.get
+        self.app.get = lambda im: faces_by_bytes.get(im.tobytes(), real_get(im))
+        try:
+            return self.client.post("/enroll", data={"name": name, **fields}, files=files)
+        finally:
+            self.app.get = real_get
+
+    def test_enrollment_without_a_description_succeeds(self):  # 10
+        r = self._post_enroll("Miguel", [at_similarity(random_identity(), 0.8)] * 3, relationship="grandson")
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertIsNone(r.json()["notes"])
+        self.assertEqual(counts(), (1, 3))
+
+    def test_enrollment_with_a_description_stores_it(self):
+        r = self._post_enroll("Ana", [at_similarity(random_identity(), 0.8)] * 3, notes="  Loves gardening.  ")
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()["notes"], "Loves gardening.")
+
+    def test_overlong_description_is_rejected_before_anything_is_saved(self):
+        r = self._post_enroll("Ana", [at_similarity(random_identity(), 0.8)] * 3, notes="x" * (config.NOTES_MAX_CHARS + 1))
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(counts(), (0, 0))
+
+    def test_description_add_edit_read_clear_without_touching_identity(self):  # 11
+        base = random_identity()
+        pid = self.enroll("Miguel", [at_similarity(base, 0.8) for _ in range(3)], relationship="grandson")
+        before = self.engine.gallery.copy()
+        for value in ("Enjoys basketball.", "Started a new job in BGC.", None):
+            r = self.client.patch(f"/people/{pid}", json={"notes": value})
+            self.assertEqual(r.status_code, 200, r.text)
+            self.assertEqual(self.client.get(f"/people/{pid}").json()["notes"], value)
+        p = people.get_person(pid)
+        self.assertEqual((p["name"], p["relationship"], p["is_unknown"]), ("Miguel", "grandson", 0))
+        self.assertEqual(counts(), (1, 3), "editing a description never adds people or face data")
+        np.testing.assert_array_equal(self.engine.gallery, before)
+
+
 class TestQuality(unittest.TestCase):
     def test_reasons(self):
         img = textured_image()

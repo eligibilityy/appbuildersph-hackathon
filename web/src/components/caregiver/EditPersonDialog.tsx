@@ -13,21 +13,25 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/api";
 import { Person } from "@/lib/server";
 
 type Props = { person: Person; open: boolean; onOpenChange: (open: boolean) => void; onSaved: () => void };
 
-/** Name + relationship form. Naming an Unknown makes them a known person. */
+/** Name, relationship and optional description. Naming an Unknown makes them a known person.
+ *  Only profile text changes here; their face photos (and so their identity) are untouched. */
 export default function EditPersonDialog({ person, open, onOpenChange, onSaved }: Props) {
   const [name, setName] = useState("");
   const [relationship, setRelationship] = useState("");
+  const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (open) {
       setName(person.is_unknown ? "" : (person.name ?? ""));
       setRelationship(person.relationship ?? "");
+      setNotes(person.notes ?? "");
     }
   }, [open, person]);
 
@@ -36,7 +40,11 @@ export default function EditPersonDialog({ person, open, onOpenChange, onSaved }
     if (!name.trim()) return;
     setSaving(true);
     try {
-      await api.updatePerson(person.id, { name: name.trim(), relationship: relationship.trim() });
+      await api.updatePerson(person.id, {
+        name: name.trim(),
+        relationship: relationship.trim(),
+        notes: notes.trim() || null, // empty clears the description
+      });
       toast.success(person.is_unknown ? `Saved as ${name.trim()}` : "Changes saved");
       onOpenChange(false);
       onSaved();
@@ -82,6 +90,19 @@ export default function EditPersonDialog({ person, open, onOpenChange, onSaved }
               value={relationship}
               onChange={(e) => setRelationship(e.target.value)}
               placeholder="grandson"
+            />
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor={`notes-${person.id}`} className="text-footnote font-medium text-muted-foreground">
+              Description <span className="font-normal">(optional)</span>
+            </Label>
+            <Textarea
+              id={`notes-${person.id}`}
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="A few words to help remember them"
+              maxLength={2000}
+              rows={3}
             />
           </div>
           <DialogFooter>
