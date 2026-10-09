@@ -79,7 +79,7 @@ export default function CaregiverPage() {
     },
     [load, loadDetail, selectedId],
   );
-  useServerSocket(onEvent);
+  const { connected } = useServerSocket(onEvent);
 
   const unknown = useMemo(() => (people ?? []).filter((p) => p.is_unknown), [people]);
   const known = useMemo(() => (people ?? []).filter((p) => !p.is_unknown), [people]);
@@ -130,6 +130,10 @@ export default function CaregiverPage() {
             </Link>
           </Button>
         </div>
+        {/* Announced to screen readers only (from fixui, ryuuu924). */}
+        <p className="sr-only" role="status">
+          {connected ? "Live updates connected" : "Live updates disconnected"}
+        </p>
 
         {error && (
           <p role="alert" className="mb-6 rounded-xl bg-destructive/10 p-4 text-body text-destructive">
@@ -227,7 +231,8 @@ function EmptyState() {
 
 function CardGridSkeleton() {
   return (
-    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+    <div role="status" aria-label="Loading people" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <span className="sr-only">Loading people…</span>
       {Array.from({ length: 6 }, (_, i) => (
         <div key={i} className="flex items-center gap-3.5 rounded-2xl border bg-card p-4">
           <Skeleton className="size-14 rounded-full" />
