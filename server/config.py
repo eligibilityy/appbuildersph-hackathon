@@ -8,7 +8,7 @@ os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
 
 SERVER_DIR = Path(__file__).resolve().parent
 ROOT_DIR = SERVER_DIR.parent
-DATA_DIR = SERVER_DIR / "data"
+DATA_DIR = Path(os.environ.get("DATA_DIR", SERVER_DIR / "data"))  # smoke test points this at a temp dir
 DB_PATH = DATA_DIR / "app.db"
 THUMBS_DIR = DATA_DIR / "thumbs"
 TTS_DIR = DATA_DIR / "tts"
@@ -16,6 +16,16 @@ MODELS_DIR = ROOT_DIR / "models"
 
 for d in (DATA_DIR, THUMBS_DIR, TTS_DIR):
     d.mkdir(parents=True, exist_ok=True)
+
+
+# --- Feature switches ---
+# Turn a feature off on a laptop that doesn't need it, e.g. FEATURE_AUDIO=0.
+# A disabled feature never loads its model. Faces are always on (it's the core).
+def _flag(name: str) -> bool:
+    return os.environ.get(f"FEATURE_{name.upper()}", "1").lower() not in ("0", "false", "no", "off")
+
+
+FEATURES = {name: _flag(name) for name in ("visits", "tts", "audio", "memory")}
 
 # --- Faces (CPU) ---
 FACE_MODEL = "buffalo_s"
