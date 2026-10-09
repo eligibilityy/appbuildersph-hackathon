@@ -1,0 +1,20 @@
+# Never commit real people's data (faces, thumbnails, transcripts)
+server/data/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Node / Next.js
+node_modules/
+web/.next/
+web/out/
+*.tsbuildinfo
+next-env.d.ts
+
+# Env / OS
+.env
+.env.local
+.DS_Store
+Thumbs.db
