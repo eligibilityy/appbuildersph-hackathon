@@ -59,6 +59,28 @@ export type FrameCheck = {
   frame: [number, number];
 };
 
+/** Answer from the local LLM, using only saved memories. */
+export type AskResult = {
+  answer: string;
+  person_ids: number[];
+  llm_seconds: number | null;
+  model: string | null;
+  audio_url: string | null;
+};
+
+/** A typed/pasted conversation, remembered by the local LLM as a visit. */
+export type ConversationResult = {
+  visit_id: number;
+  summary: string | null;
+  facts: string[];
+  visitor_name: string | null;
+  renamed: boolean;
+  llm_seconds: number;
+  model: string;
+  person: { id: number; name: string | null; relationship: string | null; is_unknown: number };
+  brief: string | null;
+};
+
 /** Error with the server's structured detail: `photos` (400: which photos to retake) or
  *  `candidates` (409: looks like someone already saved). */
 export class ApiError extends Error {
@@ -125,6 +147,12 @@ export const api = {
   /** "Unknown #3 is actually Miguel": moves their faces, visits and facts into the target. */
   merge: (sourceId: number, intoId: number) =>
     request<Person>(`/people/${sourceId}/merge`, json("POST", { into_person_id: intoId })),
+
+  /** Ask about the people saved here; answered on this laptop by the local LLM (and spoken). */
+  ask: (question: string) => request<AskResult>("/ask", json("POST", { question })),
+  /** Remember what someone said (typed or pasted): summary, facts, auto-name for an Unknown. */
+  addConversation: (personId: number, transcript: string) =>
+    request<ConversationResult>(`/people/${personId}/conversations`, json("POST", { transcript })),
 
   visits: (personId?: number) => request<Visit[]>(personId ? `/visits?person_id=${personId}` : "/visits"),
   thumbUrl: (id: number, version = 0) => `${serverUrl()}/thumbs/${id}.jpg?v=${version}`,

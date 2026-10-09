@@ -10,6 +10,7 @@ import config  # noqa: F401  (sets offline env vars before model libs load)
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+import ask
 import audio
 import db
 import hub
@@ -65,6 +66,7 @@ app.include_router(ws.router)
 app.include_router(face_routes.router)
 app.include_router(people.router)
 app.include_router(visits.router)
+app.include_router(ask.router)
 if config.FEATURES["tts"]:
     app.include_router(tts.router)
 
