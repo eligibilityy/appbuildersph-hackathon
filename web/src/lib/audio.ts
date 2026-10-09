@@ -1,17 +1,13 @@
 "use client";
 
-// Speech playback for the patient view. Owner: voice & audio member.
-// isSpeaking() lets the mic code skip sending audio while our own voice plays (+500 ms),
-// so the app never transcribes itself.
 import { serverUrl } from "@/lib/server";
 
 const TAIL_MS = 500;
 let speakingUntil = 0;
 let current: HTMLAudioElement | null = null;
 
-export function playSpeech(audioUrl: string) {
+function playAudio(audio: HTMLAudioElement) {
   current?.pause();
-  const audio = new Audio(`${serverUrl()}${audioUrl}`);
   current = audio;
   speakingUntil = Number.POSITIVE_INFINITY;
   const done = () => {
@@ -19,13 +15,58 @@ export function playSpeech(audioUrl: string) {
   };
   audio.onended = done;
   audio.onerror = done;
-  audio.play().catch(done); // autoplay can be blocked until the user clicks once
+  audio.play().catch(done);
+}
+
+export function playSpeech(audioUrl: string) {
+  playAudio(new Audio(`${serverUrl()}${audioUrl}`));
+}
+
+export function playLocalRecording(dataUrl: string) {
+  playAudio(new Audio(dataUrl));
 }
 
 export function isSpeaking() {
   return Date.now() < speakingUntil;
 }
 
-// TODO (block 2): mic capture — getUserMedia({audio: {echoCancellation, noiseSuppression}}),
-// AudioContext({sampleRate: 16000}) + AudioWorklet -> PCM16 mono ~100 ms chunks -> ws.send(buffer),
-// skipped while isSpeaking().
+/** Start local mic capture and stream PCM16LE mono chunks through the existing WebSocket. */
+export async function startMicrophone(getSocket: () => WebSocket | null): Promise<() => void> {
+  const stream = await navigator.mediaDevices.getUserMedia({
+    audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 },
+  });
+  const context = new AudioContext({ sampleRate: 16_000 });
+  try {
+    await context.audioWorklet.addModule("/pcm-capture-worklet.js");
+    const source = context.createMediaStreamSource(stream);
+    const worklet = new AudioWorkletNode(context, "pcm16-capture", {
+      numberOfInputs: 1,
+      numberOfOutputs: 1,
+      outputChannelCount: [1],
+    });
+    const silent = context.createGain();
+    silent.gain.value = 0;
+    worklet.port.onmessage = (event: MessageEvent<ArrayBuffer>) => {
+      const socket = getSocket();
+      if (isSpeaking() || !socket || socket.readyState !== WebSocket.OPEN) return;
+      if (socket.bufferedAmount > 64_000) return;
+      socket.send(event.data);
+    };
+    source.connect(worklet);
+    worklet.connect(silent);
+    silent.connect(context.destination);
+
+    return () => {
+      worklet.port.onmessage = null;
+      source.disconnect();
+      worklet.disconnect();
+      silent.disconnect();
+      stream.getTracks().forEach((track) => track.stop());
+      void context.close();
+    };
+  } catch (error) {
+    stream.getTracks().forEach((track) => track.stop());
+    await context.close();
+    throw error;
+  }
+}

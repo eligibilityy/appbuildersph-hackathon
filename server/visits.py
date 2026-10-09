@@ -247,6 +247,22 @@ def open_visit_ids() -> list[int]:
     return [row["id"] for row in rows]
 
 
+def append_transcript(visit_ids: set[int], text: str) -> list[int]:
+    """Append recognized speech to targeted visits that are still open; return IDs updated."""
+    if not visit_ids or not text.strip():
+        return []
+    updated = []
+    with db.connect() as c:
+        for visit_id in visit_ids:
+            row = c.execute("SELECT transcript FROM visits WHERE id = ? AND ended_at IS NULL", (visit_id,)).fetchone()
+            if row is None:
+                continue
+            transcript = " ".join(part for part in (row["transcript"], text.strip()) if part)
+            c.execute("UPDATE visits SET transcript = ? WHERE id = ? AND ended_at IS NULL", (transcript, visit_id))
+            updated.append(visit_id)
+    return updated
+
+
 def replay_brief() -> list[dict]:
     """'Who's this?' button / spacebar: repeat the brief for whoever is in view."""
     events = []
