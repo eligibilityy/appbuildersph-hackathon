@@ -12,10 +12,13 @@ router = APIRouter()
 # --- queries ---
 
 def create_person(name, relationship=None, is_unknown=False, name_source=None) -> int:
+    created_at = db.now()
     with db.connect() as c:
         cur = c.execute(
-            "INSERT INTO people (name, relationship, is_unknown, name_source, created_at) VALUES (?,?,?,?,?)",
-            (name, relationship, int(is_unknown), name_source, db.now()),
+            """INSERT INTO people
+               (name, relationship, is_unknown, name_source, created_at, registered_at)
+               VALUES (?,?,?,?,?,?)""",
+            (name, relationship, int(is_unknown), name_source, created_at, created_at),
         )
         return cur.lastrowid
 
@@ -80,6 +83,7 @@ def person(person_id: int):
         raise HTTPException(404, "not found")
     p["visits"] = visits.list_visits(person_id)
     p["facts"] = memory.list_facts(person_id)
+    p["appearances"], p["hourly_status"] = visits.appearance_history(person_id)
     p["embedding_count"] = count_embeddings(person_id)
     return p
 
