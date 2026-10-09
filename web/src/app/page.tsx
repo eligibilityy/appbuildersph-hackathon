@@ -10,7 +10,7 @@ import CameraErrorCard from "@/components/patient/CameraErrorCard";
 import PersonProfileCard from "@/components/patient/PersonProfileCard";
 import SpokenCaption, { Spoken } from "@/components/patient/SpokenCaption";
 import WhoButton from "@/components/patient/WhoButton";
-import { playSpeech } from "@/lib/audio";
+import { playSpeech, startMicrophone } from "@/lib/audio";
 import { grabFrame, useCamera } from "@/lib/camera";
 import { FaceBox, ServerEvent, useServerSocket } from "@/lib/server";
 
@@ -63,6 +63,22 @@ export default function PatientView() {
   }, []);
 
   const { wsRef, connected } = useServerSocket(onEvent);
+
+  // The worklet streams mic PCM to the same local socket as the camera. It stops with this page.
+  useEffect(() => {
+    let cancelled = false;
+    let stop: (() => void) | null = null;
+    startMicrophone(() => wsRef.current)
+      .then((cleanup) => {
+        if (cancelled) cleanup();
+        else stop = cleanup;
+      })
+      .catch((error) => console.warn("[audio] microphone unavailable:", error));
+    return () => {
+      cancelled = true;
+      stop?.();
+    };
+  }, [wsRef]);
 
   // Send ~5 fps JPEG frames.
   useEffect(() => {
