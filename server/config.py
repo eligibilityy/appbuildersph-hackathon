@@ -84,7 +84,10 @@ MONITORING_GAP_SECONDS = float(os.environ.get("MONITORING_GAP_SECONDS", 5))
 WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "base")  # CPU-only multilingual model
 WHISPER_DEVICE = "cpu"
 WHISPER_COMPUTE_TYPE = "int8"
-WHISPER_LANGUAGE = None          # pin to "en" if detection flips around
+# "tl" (Tagalog) handles Tagalog, Taglish and English: tested on the dev laptop, English stayed word-for-word
+# while auto-detect misheard Tagalog as Latin/English/Indonesian. WHISPER_LANGUAGE=auto to auto-detect.
+_whisper_language = os.environ.get("WHISPER_LANGUAGE", "tl").strip().lower()
+WHISPER_LANGUAGE = None if _whisper_language in ("", "auto", "none") else _whisper_language
 
 # --- LLM (GPU via Ollama) ---
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3:4b")  # fallback: "qwen3:1.7b"
