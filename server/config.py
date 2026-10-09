@@ -29,11 +29,23 @@ FEATURES = {name: _flag(name) for name in ("visits", "tts", "audio", "memory")}
 
 # --- Faces (CPU) ---
 FACE_MODEL = "buffalo_s"
-FACE_DET_SIZE = (320, 320)
+# 480, not 320: glasses lower the detector's confidence, and at 320 a 640 px frame is halved before
+# detection, so mid-distance faces WITH glasses were often missed entirely (never even matched).
+# Measured on synthetic glasses (tests/test_faces_real_model.py): 15/21 detected at 320, 21/21 at 480,
+# for ~11 -> ~14 ms per frame on the dev laptop. Drop back to 320 only if the demo laptop is too slow.
+FACE_DET_SIZE = (480, 480)
 FACE_PROVIDERS = ["CPUExecutionProvider"]
 
-MATCH_THRESHOLD = 0.45          # cosine similarity; tune with real faces
+MATCH_THRESHOLD = 0.45          # cosine similarity; tune with real faces (tools/eval_faces.py)
+MATCH_MARGIN = 0.08             # best person must beat the 2nd-best person by this much, else "not sure"
+TRACK_SCORE_WINDOW = 5          # per-person scores are averaged over this many recent good frames
 CONFIRM_FRAMES = 5              # a track must agree on identity this many frames
+# Glasses/hats can push a genuine match just under MATCH_THRESHOLD. A track may still be confirmed if
+# the SAME person stays above WEAK_MATCH_THRESHOLD, far ahead of everyone else, for WEAK_MATCH_FRAMES
+# good frames in a row (~3 s at 5 fps). Weak confirmations are never learned from.
+WEAK_MATCH_THRESHOLD = 0.38
+WEAK_MATCH_MARGIN = 0.15
+WEAK_MATCH_FRAMES = 15
 MAX_EMBEDDINGS_PER_PERSON = 20
 ADD_EMBEDDING_MIN_SCORE = 0.55  # only learn new angles from confident matches
 ADD_EMBEDDING_MAX_SCORE = 0.80  # ...that aren't near-duplicates of what we have
@@ -43,6 +55,22 @@ ADD_EMBEDDING_EVERY_S = 10.0
 UNKNOWN_MIN_FACE_PX = 60        # min face box width/height
 UNKNOWN_MIN_DET_SCORE = 0.65
 UNKNOWN_MAX_BEST_SCORE = 0.35   # track must never have come close to a known person
+UNKNOWN_MIN_SELF_SIM = 0.50     # the frames saved for a new Unknown must look like one face
+
+# Face quality gate (faces/quality.py). Calibrated on InsightFace sample photos: normalised sharpness
+# is ~110-400 for sharp faces, ~44 for a mild blur (still matches at 0.94), ~12 for a heavy blur.
+# Over-exposed faces (brightness ~240) dropped to 0.40 similarity; dark ones (~30) still matched at 0.94.
+QUALITY_LIVE = {"min_face_px": 40, "min_brightness": 20, "max_brightness": 235,
+                "min_sharpness": 15, "max_yaw": 0.75, "pitch_range": (0.2, 1.1)}
+QUALITY_ENROLL = {"min_face_px": 80, "min_brightness": 40, "max_brightness": 215,
+                  "min_sharpness": 30, "max_yaw": 0.5, "pitch_range": (0.3, 0.95)}
+
+# Enrollment
+ENROLL_MIN_IMAGES = 3
+ENROLL_MAX_IMAGES = 8           # 5 guided shots + up to 2-3 with/without glasses
+ENROLL_MIN_SELF_SIM = 0.25      # each photo vs the others: lower -> "doesn't look like the same person"
+DUPLICATE_THRESHOLD = MATCH_THRESHOLD  # enrollment photos this similar to someone saved -> ask first
+ADD_PHOTOS_MIN_SIM = 0.20       # "add photos to X": photos must look at least a little like X
 
 TRACK_IOU = 0.3                 # IoU to associate a detection with an existing track
 TRACK_MAX_MISSES = 10           # frames a track survives without a detection

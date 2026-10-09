@@ -24,8 +24,11 @@ def create_person(name, relationship=None, is_unknown=False, name_source=None) -
 
 
 def next_unknown_label() -> str:
+    # MAX, not COUNT: after an Unknown is merged/deleted, COUNT would hand out a label that's still in use.
     with db.connect() as c:
-        n = c.execute("SELECT COUNT(*) FROM people WHERE name LIKE 'Unknown #%'").fetchone()[0]
+        n = c.execute(
+            "SELECT COALESCE(MAX(CAST(SUBSTR(name, 10) AS INTEGER)), 0) FROM people WHERE name LIKE 'Unknown #%'"
+        ).fetchone()[0]
     return f"Unknown #{n + 1}"
 
 

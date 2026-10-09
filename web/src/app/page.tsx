@@ -2,8 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import ConnectionStatus from "@/components/app/ConnectionStatus";
 import FaceOverlay from "@/components/FaceOverlay";
 import NameCard from "@/components/NameCard";
+import CameraErrorCard from "@/components/patient/CameraErrorCard";
+import WhoButton from "@/components/patient/WhoButton";
 import { playSpeech } from "@/lib/audio";
 import { grabFrame, useCamera } from "@/lib/camera";
 import { FaceBox, ServerEvent, useServerSocket } from "@/lib/server";
@@ -109,25 +112,13 @@ export default function PatientView() {
         </Link>
       </nav>
 
-      <div
-        className={`absolute right-4 top-4 h-4 w-4 rounded-full ${connected ? "bg-green-500" : "bg-red-600"}`}
-        title={connected ? "Connected" : "Not connected to local server"}
-      />
+      <ConnectionStatus online={connected} className="absolute left-4 top-4" />
 
-      {camError && (
-        <div className="absolute inset-x-0 top-1/3 mx-auto w-fit rounded-xl bg-red-700 px-6 py-4 text-2xl">
-          Camera unavailable: {camError}
-        </div>
-      )}
+      {camError && <CameraErrorCard message={camError} />}
 
       <div className="absolute inset-x-0 bottom-0 flex flex-col items-center gap-6 p-8">
         {card && <NameCard name={card.name} relationship={card.relationship} />}
-        <button
-          onClick={replay}
-          className="rounded-full bg-yellow-400 px-16 py-6 text-5xl font-bold text-black shadow-xl active:scale-95"
-        >
-          Who&apos;s this?
-        </button>
+        <WhoButton onClick={replay} />
       </div>
     </main>
   );
