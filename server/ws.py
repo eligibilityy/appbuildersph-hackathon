@@ -65,6 +65,9 @@ async def ws_endpoint(ws: WebSocket):
                 else:
                     await asyncio.to_thread(visits.note_monitoring_frame, monitoring_session_id, frame_at)
                 last_monitor_frame_at, last_monitor_frame_mono = frame_at, frame_mono
+                visit_events = []
+                if config.FEATURES["visits"]:
+                    visit_events = await asyncio.to_thread(visits.update, result.present_person_ids)
                 changed_ids = await asyncio.to_thread(
                     visits.record_confirmed_appearances, result.present_person_ids, frame_at
                 )
@@ -73,8 +76,7 @@ async def ws_endpoint(ws: WebSocket):
                 await ws.send_json({"type": "faces", "faces": result.faces})
                 for pid in result.new_people:
                     await hub.broadcast({"type": "memory_updated", "person_id": pid})
-                if config.FEATURES["visits"]:
-                    await _broadcast_all(await asyncio.to_thread(visits.update, result.present_person_ids))
+                await _broadcast_all(visit_events)
             except Exception as e:
                 print(f"[ws] frame error: {e!r}")
 
