@@ -151,6 +151,11 @@ class TagalogCleanupTests(unittest.TestCase):
         self.assertEqual(self.summary("Ana came from Bagungio yesterday."), "Ana came from Baguio yesterday.")
         self.assertEqual(self.summary("Bea will come home from C.ceb."), "Bea will come home from Cebu.")
         self.assertEqual(self.summary("Ana came from Bagu:100."), "Ana came from Baguio.")
+        self.assertEqual(self.summary("Ana came from Baguong yesterday."), "Ana came from Baguio yesterday.")
+        self.assertEqual(self.summary("the church in Tagayttagaytay", "Doon po sa simbahan sa Tagaytay."),
+                         "the church in Tagaytay")
+        self.assertEqual(self.summary("started a new job in B: GC", "I just started a new job in BGC."),
+                         "started a new job in BGC")
 
     def test_different_names_and_english_words_are_left_alone(self):
         self.assertEqual(self.summary("Carla came in December."), "Carla came in December.")

@@ -1,6 +1,7 @@
 "use client";
 
 import { CalendarClock, ChevronLeft, Eye, EyeOff } from "lucide-react";
+import ConversationCard from "@/components/caregiver/ConversationCard";
 import VisitTimeline from "@/components/caregiver/VisitTimeline";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -14,10 +15,13 @@ export default function PersonDetail({
   person,
   version,
   onBack,
+  onChanged,
 }: {
   person: PersonRecord;
   version: number;
   onBack: () => void;
+  /** Something about this person changed here (e.g. a conversation was remembered): reload them. */
+  onChanged: () => void;
 }) {
   // Server sends the latest hour first; the strip reads left (oldest) to right (now).
   const hours = [...person.hourly_status].reverse();
@@ -72,6 +76,8 @@ export default function PersonDetail({
           {person.notes}
         </p>
       )}
+
+      <ConversationCard personId={person.id} onSaved={onChanged} />
 
       <VisitTimeline visits={person.visits} facts={person.facts} />
 
