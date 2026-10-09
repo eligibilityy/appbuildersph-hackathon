@@ -87,9 +87,9 @@ export function stepTags(tags: Map<string, Tag>, now: number, dt: number): void 
   }
 }
 
-/** Large, readable: scales with the face, within limits. */
+/** Readable but compact (the camera view is no longer full screen): scales with the face, within limits. */
 export function tagFontPx(faceWidthPx: number): number {
-  return Math.round(Math.min(64, Math.max(34, faceWidthPx * 0.3)));
+  return Math.round(Math.min(40, Math.max(22, faceWidthPx * 0.24)));
 }
 
 /** Where to draw a tag of the given text width for a face box (view pixels). Never overlaps the face. */

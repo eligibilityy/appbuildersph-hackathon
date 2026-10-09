@@ -3,11 +3,39 @@
 import { serverUrl } from "@/lib/server";
 
 const TAIL_MS = 500;
+const BLOCKED_REPLAY_MS = 15_000; // after a tap unlocks sound, still play a brief this recent
 let speakingUntil = 0;
 let current: HTMLAudioElement | null = null;
 
+// Chrome blocks sound until someone has clicked or pressed a key on the page (unless it was started
+// with --autoplay-policy=no-user-gesture-required). Remember the blocked clip and play it on the
+// first gesture, and let the page show a "turn on sound" hint meanwhile.
+let blocked: { audio: HTMLAudioElement; at: number } | null = null;
+const blockedListeners = new Set<(blocked: boolean) => void>();
+
+function setBlocked(next: typeof blocked) {
+  const changed = !!next !== !!blocked;
+  blocked = next;
+  if (changed) blockedListeners.forEach((fn) => fn(!!next));
+}
+
+/** Subscribe to "sound is blocked until a tap". Returns an unsubscribe function. */
+export function onSoundBlocked(fn: (blocked: boolean) => void): () => void {
+  blockedListeners.add(fn);
+  fn(!!blocked);
+  return () => blockedListeners.delete(fn);
+}
+
+/** Call from a click/keydown handler: plays the clip the browser blocked, if it's still recent. */
+export function unlockSound() {
+  if (!blocked) return;
+  const { audio, at } = blocked;
+  setBlocked(null);
+  if (Date.now() - at < BLOCKED_REPLAY_MS && current === audio) playAudio(audio);
+}
+
 function playAudio(audio: HTMLAudioElement) {
-  current?.pause();
+  if (current !== audio) current?.pause();
   current = audio;
   speakingUntil = Number.POSITIVE_INFINITY;
   const done = () => {
@@ -15,7 +43,13 @@ function playAudio(audio: HTMLAudioElement) {
   };
   audio.onended = done;
   audio.onerror = done;
-  audio.play().catch(done);
+  audio
+    .play()
+    .then(() => setBlocked(null))
+    .catch((err: unknown) => {
+      if (err instanceof DOMException && err.name === "NotAllowedError") setBlocked({ audio, at: Date.now() });
+      done();
+    });
 }
 
 export function playSpeech(audioUrl: string) {

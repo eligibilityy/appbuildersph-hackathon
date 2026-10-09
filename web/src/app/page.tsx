@@ -2,60 +2,53 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Users } from "lucide-react";
+import { MicOff, Users, VolumeX } from "lucide-react";
 import ConnectionStatus from "@/components/app/ConnectionStatus";
 import FaceOverlay, { TagAnchor } from "@/components/FaceOverlay";
-import NameCard from "@/components/NameCard";
 import CameraErrorCard from "@/components/patient/CameraErrorCard";
+import DateClock from "@/components/patient/DateClock";
 import PersonProfileCard from "@/components/patient/PersonProfileCard";
-import SpokenCaption, { Spoken } from "@/components/patient/SpokenCaption";
+import SpeechBubble, { Spoken } from "@/components/patient/SpeechBubble";
 import WhoButton from "@/components/patient/WhoButton";
-import { playSpeech, startMicrophone } from "@/lib/audio";
+import { onSoundBlocked, playSpeech, startMicrophone, unlockSound } from "@/lib/audio";
 import { grabFrame, useCamera } from "@/lib/camera";
-import { FaceBox, ServerEvent, useServerSocket } from "@/lib/server";
+import { isNameable } from "@/lib/nameTags";
+import { FaceBox, ServerEvent, serverUrl, useServerSocket } from "@/lib/server";
+import { useWakeLock } from "@/lib/useWakeLock";
+import { cn } from "@/lib/utils";
 
 const FPS = 5;
-const CARD_HOLD_MS = 3000; // keep the name card up briefly after the face drops out, to avoid flicker
 const PROFILE_HOLD_MS = 8000; // close an open profile card once its person has been out of view this long
-
-type Card = { name: string; relationship: string | null };
 
 export default function PatientView() {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const grabRef = useRef<HTMLCanvasElement | null>(null);
   const [frameSize, setFrameSize] = useState({ w: 640, h: 480 });
   const [faces, setFaces] = useState<FaceBox[]>([]);
-  const [card, setCard] = useState<Card | null>(null);
-  const cardSeenAt = useRef(0);
+  const facesRef = useRef<FaceBox[]>([]);
   const [selected, setSelected] = useState<{ personId: number; anchor: TagAnchor } | null>(null);
   const [profileVersion, setProfileVersion] = useState(0);
   const [spoken, setSpoken] = useState<Spoken | null>(null); // what the app is saying right now
+  const [soundBlocked, setSoundBlocked] = useState(false);
+  const [micOff, setMicOff] = useState(false);
+  const [voiceMissing, setVoiceMissing] = useState(false);
   const seenAt = useRef(new Map<number, number>()); // person_id -> last time a confirmed face was in view
   const selectedRef = useRef<number | null>(null);
   selectedRef.current = selected?.personId ?? null;
 
   const camError = useCamera(videoRef);
+  useWakeLock();
 
   const onEvent = useCallback((e: ServerEvent) => {
     if (e.type === "faces") {
       setFaces(e.faces);
+      facesRef.current = e.faces;
       const now = Date.now();
       for (const f of e.faces) if (f.person_id !== null && !f.is_unknown) seenAt.current.set(f.person_id, now);
-      // Name card: the largest confirmed, known face.
-      const known = e.faces
-        .filter((f) => f.person_id !== null && !f.is_unknown && f.name)
-        .sort((a, b) => area(b.box) - area(a.box))[0];
-      if (known) {
-        cardSeenAt.current = Date.now();
-        setCard((c) =>
-          c?.name === known.name && c?.relationship === known.relationship
-            ? c
-            : { name: known.name!, relationship: known.relationship },
-        );
-      }
     } else if (e.type === "speak") {
       // Always show the words; play the audio when the server could make it.
-      if (e.text) setSpoken({ id: Date.now(), text: e.text });
+      if (e.text) setSpoken({ id: Date.now(), text: e.text, personId: e.person_id ?? null });
       if (e.audio_url) playSpeech(e.audio_url);
     } else if (e.type === "memory_updated" && e.person_id === selectedRef.current) {
       setProfileVersion((v) => v + 1); // edited, merged or deleted elsewhere: refresh the open card
@@ -63,6 +56,30 @@ export default function PatientView() {
   }, []);
 
   const { wsRef, connected } = useServerSocket(onEvent);
+
+  // Can the server speak? (Piper voice files present.) Checked on each (re)connect.
+  useEffect(() => {
+    if (!connected) return;
+    let cancelled = false;
+    fetch(`${serverUrl()}/health`, { cache: "no-store" })
+      .then((r) => r.json())
+      .then((h) => !cancelled && setVoiceMissing(h.voice === false))
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [connected]);
+
+  // Browsers block sound until the page has been clicked once. Any tap or key turns it on.
+  useEffect(() => onSoundBlocked(setSoundBlocked), []);
+  useEffect(() => {
+    window.addEventListener("pointerdown", unlockSound);
+    window.addEventListener("keydown", unlockSound);
+    return () => {
+      window.removeEventListener("pointerdown", unlockSound);
+      window.removeEventListener("keydown", unlockSound);
+    };
+  }, []);
 
   // The worklet streams mic PCM to the same local socket as the camera. It stops with this page.
   useEffect(() => {
@@ -72,8 +89,12 @@ export default function PatientView() {
       .then((cleanup) => {
         if (cancelled) cleanup();
         else stop = cleanup;
+        setMicOff(false);
       })
-      .catch((error) => console.warn("[audio] microphone unavailable:", error));
+      .catch((error) => {
+        console.warn("[audio] microphone unavailable:", error);
+        if (!cancelled) setMicOff(true);
+      });
     return () => {
       cancelled = true;
       stop?.();
@@ -96,22 +117,34 @@ export default function PatientView() {
     return () => clearInterval(id);
   }, [wsRef]);
 
-  // Hide the card once nobody known has been seen for a moment; close a profile whose person has left.
+  // Close a profile whose person has left.
   useEffect(() => {
     const id = setInterval(() => {
-      if (Date.now() - cardSeenAt.current > CARD_HOLD_MS) setCard(null);
       const sel = selectedRef.current;
       if (sel !== null && Date.now() - (seenAt.current.get(sel) ?? 0) > PROFILE_HOLD_MS) setSelected(null);
     }, 500);
     return () => clearInterval(id);
   }, []);
 
+  // Tag positions are relative to the camera view; the profile card is placed in page coordinates.
   const selectPerson = useCallback((personId: number, anchor: TagAnchor) => {
-    setSelected((s) => (s?.personId === personId ? null : { personId, anchor }));
+    const r = panelRef.current?.getBoundingClientRect();
+    const dx = r?.left ?? 0;
+    const dy = r?.top ?? 0;
+    setSelected((s) =>
+      s?.personId === personId
+        ? null
+        : { personId, anchor: { x: anchor.x + dx, top: anchor.top + dy, bottom: anchor.bottom + dy } },
+    );
   }, []);
   const closeProfile = useCallback(() => setSelected(null), []);
 
   const replay = useCallback(() => {
+    // Nobody recognized in view: answer right away instead of staying silent.
+    if (!facesRef.current.some(isNameable)) {
+      setSpoken({ id: Date.now(), text: "I don't see anyone I know right now.", personId: null });
+      return;
+    }
     const ws = wsRef.current;
     if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "replay_brief" }));
   }, [wsRef]);
@@ -132,14 +165,57 @@ export default function PatientView() {
   }, [replay]);
 
   return (
-    <main className="fixed inset-0 select-none overflow-hidden bg-black text-white">
-      <FaceOverlay
-        videoRef={videoRef}
-        faces={faces}
-        frameSize={frameSize}
-        selectedPersonId={selected?.personId ?? null}
-        onSelectPerson={selectPerson}
-      />
+    <main className="fixed inset-0 flex flex-col overflow-hidden bg-background text-foreground select-none">
+      <header className="flex items-start justify-between gap-4 px-6 pt-5 pb-3">
+        <DateClock />
+        {/* Status for the caregiver, kept small: the patient doesn't need to act on it. */}
+        <nav aria-label="Status and navigation" className="flex flex-wrap items-center justify-end gap-2">
+          {soundBlocked && (
+            <Chip as="button" tone="warning" onClick={unlockSound}>
+              <VolumeX className="size-3.5" /> Tap to turn on sound
+            </Chip>
+          )}
+          {voiceMissing && (
+            <Chip tone="warning" title="Piper voice files are missing from /models. Briefs show as text only.">
+              <VolumeX className="size-3.5" /> Voice off
+            </Chip>
+          )}
+          {micOff && (
+            <Chip tone="warning" title="Allow microphone access to record conversations.">
+              <MicOff className="size-3.5" /> Mic off
+            </Chip>
+          )}
+          <ConnectionStatus online={connected} />
+          <Link
+            href="/caregiver"
+            className="inline-flex h-8 items-center gap-1.5 rounded-full border bg-card px-3 text-footnote font-medium text-muted-foreground transition-colors duration-150 outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
+          >
+            <Users className="size-3.5" /> Caregiver
+          </Link>
+        </nav>
+      </header>
+
+      <section aria-label="Camera" className="relative flex min-h-0 flex-1 items-center justify-center px-6 py-2">
+        <div
+          ref={panelRef}
+          className="relative aspect-video max-h-full w-full max-w-4xl overflow-hidden rounded-[28px] bg-black ring-1 ring-black/10"
+        >
+          <FaceOverlay
+            videoRef={videoRef}
+            faces={faces}
+            frameSize={frameSize}
+            selectedPersonId={selected?.personId ?? null}
+            onSelectPerson={selectPerson}
+          />
+        </div>
+        {camError && <CameraErrorCard message={camError} />}
+      </section>
+
+      <footer className="flex justify-center px-6 pt-3 pb-6">
+        <WhoButton onClick={replay} />
+      </footer>
+
+      <SpeechBubble spoken={spoken} faces={faces} frameSize={frameSize} panelRef={panelRef} />
       {selected && (
         <PersonProfileCard
           key={selected.personId}
@@ -149,29 +225,26 @@ export default function PatientView() {
           onClose={closeProfile}
         />
       )}
-
-      {/* Top bar: connection status + a way to the caregiver dashboard (kept small: the patient doesn't need it). */}
-      <nav aria-label="View navigation" className="absolute left-4 top-4 z-20 flex flex-wrap items-center gap-2">
-        <ConnectionStatus online={connected} />
-        <Link
-          href="/caregiver"
-          className="inline-flex h-8 items-center gap-1.5 rounded-full border bg-card px-3 text-footnote font-medium text-muted-foreground transition-colors duration-150 outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
-        >
-          <Users className="size-3.5" /> Caregiver dashboard
-        </Link>
-      </nav>
-
-      {camError && <CameraErrorCard message={camError} />}
-
-      <div className="absolute inset-x-0 bottom-0 flex flex-col items-center gap-6 p-8">
-        <SpokenCaption spoken={spoken} />
-        {card && <NameCard name={card.name} relationship={card.relationship} />}
-        <WhoButton onClick={replay} />
-      </div>
     </main>
   );
 }
 
-function area(b: [number, number, number, number]) {
-  return (b[2] - b[0]) * (b[3] - b[1]);
+function Chip({
+  as = "span",
+  tone,
+  className,
+  ...props
+}: { as?: "span" | "button"; tone?: "warning" } & React.HTMLAttributes<HTMLElement>) {
+  const Tag = as;
+  return (
+    <Tag
+      {...(as === "button" ? { type: "button" as const } : { role: "status" })}
+      className={cn(
+        "inline-flex h-8 items-center gap-1.5 rounded-full border bg-card px-3 text-footnote font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+        tone === "warning" ? "border-warning/40 text-[#a35d00]" : "text-muted-foreground",
+        className,
+      )}
+      {...props}
+    />
+  );
 }
