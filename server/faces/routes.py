@@ -63,13 +63,17 @@ async def enroll(
     relationship: str = Form(""),
     images: list[UploadFile] = File(...),
     force: bool = Form(False),  # caregiver confirmed "this is a different person" after a 409
+    notes: str = Form(""),      # optional description ("He enjoys basketball..."); never required
 ):
     name = name.strip()
     if not name:
         raise HTTPException(400, "name is required")
+    notes = notes.strip()
+    if len(notes) > config.NOTES_MAX_CHARS:
+        raise HTTPException(400, f"description is too long (max {config.NOTES_MAX_CHARS} characters)")
     _count_ok(images, config.ENROLL_MIN_IMAGES, config.ENROLL_MAX_IMAGES)
     imgs = await _read_images(images)
-    pid = await _run(hub.engine.enroll, name, relationship.strip() or None, imgs, force)
+    pid = await _run(hub.engine.enroll, name, relationship.strip() or None, imgs, force, notes or None)
     await hub.broadcast({"type": "memory_updated", "person_id": pid})
     return people.get_person(pid)
 

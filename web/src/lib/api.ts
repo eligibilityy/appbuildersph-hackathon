@@ -32,6 +32,10 @@ export type FrameCheck = {
   reason: string | null;
   box: [number, number, number, number] | null;
   match: { id: number; name: string | null; is_unknown: boolean; score: number } | null;
+  /** Head pose from the 5 face landmarks. yaw > 0 = turned to the person's own left. */
+  pose: { yaw: number; pitch: number } | null;
+  /** Size of the checked image [width, height]; `box` is in these pixels. */
+  frame: [number, number];
 };
 
 /** Error with the server's structured detail: `photos` (400: which photos to retake) or
@@ -80,10 +84,10 @@ export const api = {
 
   /** New person: 3–8 photos, each with exactly one face. 409 (ApiError.candidates) if they look like
    *  someone already saved; `force` = the caregiver confirmed it's a different person. */
-  enroll: (name: string, relationship: string, images: Blob[], force = false) =>
+  enroll: (name: string, relationship: string, images: Blob[], force = false, notes = "") =>
     request<Person>("/enroll", {
       method: "POST",
-      body: imagesForm(images, { name, relationship, ...(force ? { force: "true" } : {}) }),
+      body: imagesForm(images, { name, relationship, notes, ...(force ? { force: "true" } : {}) }),
     }),
   /** More photos for someone already known (e.g. now wearing glasses): 1–8 photos. */
   addPhotos: (id: number, images: Blob[], force = false) =>
