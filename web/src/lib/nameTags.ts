@@ -11,7 +11,7 @@ import type { FaceBox } from "./server";
 
 export type Box = [number, number, number, number];
 export type Size = { w: number; h: number };
-export type TagTarget = { key: string; name: string; box: Box };
+export type TagTarget = { key: string; personId: number; name: string; box: Box };
 export type Tag = TagTarget & { target: Box; alpha: number; lastSeen: number };
 export type Placement = {
   left: number;
@@ -54,7 +54,7 @@ export function tagTargets(faces: FaceBox[]): TagTarget[] {
     const n = seen.get(key) ?? 0; // same person twice (e.g. a photo of them): keep both, distinct keys
     seen.set(key, n + 1);
     if (n) key += `#${n}`;
-    out.push({ key, name: f.name!, box: [...f.box] as Box });
+    out.push({ key, personId: f.person_id!, name: f.name!, box: [...f.box] as Box });
   }
   return out;
 }
@@ -123,8 +123,8 @@ export type Ctx = Pick<
 const FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
 
 /** Draw one name tag: a dark rounded pill with a white outline and a small pointer toward the face.
- *  No box is drawn around the face itself. */
-export function drawTag(ctx: Ctx, tag: Tag, frame: Size, view: Size, mirrored = false): Placement {
+ *  No box is drawn around the face itself. `selected` = its profile card is open (cyan outline). */
+export function drawTag(ctx: Ctx, tag: Tag, frame: Size, view: Size, mirrored = false, selected = false): Placement {
   const face = mapBox(tag.box, frame, view, mirrored);
   let fontPx = tagFontPx(face[2] - face[0]);
   ctx.font = `700 ${fontPx}px ${FONT}`;
@@ -167,9 +167,9 @@ export function drawTag(ctx: Ctx, tag: Tag, frame: Size, view: Size, mirrored = 
   ctx.fillStyle = "rgba(15, 23, 42, 0.92)"; // near-black: readable on light and dark backgrounds
   ctx.fill();
   ctx.shadowColor = "transparent";
-  ctx.lineWidth = Math.max(2.5, fontPx * 0.08);
+  ctx.lineWidth = Math.max(2.5, fontPx * 0.08) * (selected ? 1.4 : 1);
   ctx.lineJoin = "round";
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.95)";
+  ctx.strokeStyle = selected ? "rgba(34, 211, 238, 1)" : "rgba(255, 255, 255, 0.95)";
   ctx.stroke();
   ctx.fillStyle = "#ffffff";
   ctx.textAlign = "center";
@@ -177,4 +177,76 @@ export function drawTag(ctx: Ctx, tag: Tag, frame: Size, view: Size, mirrored = 
   ctx.fillText(tag.name, left + width / 2, top + height / 2 + fontPx * 0.04);
   ctx.restore();
   return p;
+}
+
+// --- Scanning state for faces that don't have a confirmed name (yet) ---
+//
+// "pending": the server hasn't confirmed who this is (person_id null) - it really is still matching.
+// "unknown": checked and saved as an Unknown - shown neutrally, never with a name.
+// There's no track id in the faces event, so scans follow faces by box overlap (IoU) between updates.
+
+export type ScanKind = "pending" | "unknown";
+export type Scan = { id: number; kind: ScanKind; box: Box; target: Box; alpha: number; lastSeen: number; resolving: boolean };
+
+export const SCAN_HOLD_MS = 500;
+const SCAN_FADE_MS = 250;
+const MATCH_IOU = 0.2;
+let nextScanId = 1;
+
+export function iou(a: Box, b: Box): number {
+  const x1 = Math.max(a[0], b[0]);
+  const y1 = Math.max(a[1], b[1]);
+  const x2 = Math.min(a[2], b[2]);
+  const y2 = Math.min(a[3], b[3]);
+  const inter = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+  if (inter <= 0) return 0;
+  return inter / ((a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter);
+}
+
+/** Apply a server update to the scans. A scan whose face became a confirmed person starts resolving
+ *  (fades out quickly) while that person's name tag fades in. */
+export function syncScans(scans: Scan[], faces: FaceBox[], now: number): Scan[] {
+  const used = new Set<Scan>();
+  const best = (box: Box) => {
+    let pick: Scan | null = null;
+    let score = MATCH_IOU;
+    for (const s of scans) {
+      if (used.has(s) || s.resolving) continue;
+      const v = iou(s.target, box);
+      if (v >= score) [pick, score] = [s, v];
+    }
+    return pick;
+  };
+  for (const f of faces) {
+    const box = [...f.box] as Box;
+    const scan = best(box);
+    if (isNameable(f)) {
+      if (scan) {
+        scan.resolving = true;
+        used.add(scan);
+      }
+      continue;
+    }
+    const kind: ScanKind = f.person_id !== null && f.is_unknown ? "unknown" : "pending";
+    if (scan) {
+      Object.assign(scan, { kind, target: box, lastSeen: now });
+      used.add(scan);
+    } else {
+      const s: Scan = { id: nextScanId++, kind, box: [...box] as Box, target: box, alpha: 0, lastSeen: now, resolving: false };
+      scans.push(s);
+      used.add(s);
+    }
+  }
+  return scans;
+}
+
+/** Advance scans by dt ms; returns the scans still visible. */
+export function stepScans(scans: Scan[], now: number, dt: number): Scan[] {
+  const k = 1 - Math.exp(-Math.max(0, dt) / GLIDE_MS);
+  for (const s of scans) {
+    for (let i = 0; i < 4; i++) s.box[i] += (s.target[i] - s.box[i]) * k;
+    const present = !s.resolving && now - s.lastSeen <= SCAN_HOLD_MS;
+    s.alpha = present ? Math.min(1, s.alpha + dt / TAG_FADE_IN_MS) : Math.max(0, s.alpha - dt / SCAN_FADE_MS);
+  }
+  return scans.filter((s) => s.alpha > 0 || (!s.resolving && now - s.lastSeen <= SCAN_HOLD_MS));
 }

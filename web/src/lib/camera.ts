@@ -2,11 +2,13 @@
 
 import { RefObject, useEffect, useState } from "react";
 
-/** Attach the webcam to a <video>. */
-export function useCamera(videoRef: RefObject<HTMLVideoElement | null>) {
+/** Attach the webcam to a <video>. With `enabled` false the camera is off (and released when it turns off). */
+export function useCamera(videoRef: RefObject<HTMLVideoElement | null>, enabled = true) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!enabled) return;
+    setError(null);
     let stream: MediaStream | null = null;
     let cancelled = false;
     navigator.mediaDevices
@@ -23,11 +25,13 @@ export function useCamera(videoRef: RefObject<HTMLVideoElement | null>) {
         }
       })
       .catch((e) => setError(String(e?.message ?? e)));
+    const video = videoRef.current;
     return () => {
       cancelled = true;
       stream?.getTracks().forEach((t) => t.stop());
+      if (video && video.srcObject === stream) video.srcObject = null;
     };
-  }, [videoRef]);
+  }, [videoRef, enabled]);
 
   return error;
 }
@@ -58,4 +62,25 @@ export function dataUrlToBlob(dataUrl: string): Blob {
   const arr = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
   return new Blob([arr], { type: mime });
+}
+
+let sigCanvas: HTMLCanvasElement | null = null;
+
+/** 16x16 grey thumbnail of the face region of a grabbed frame (box in that frame's pixels), for
+ *  spotting near-identical enrollment photos. Stays in the browser; nothing is sent anywhere. */
+export function faceGrey(frame: HTMLCanvasElement, box: [number, number, number, number], size = 16): number[] | null {
+  const [x1, y1, x2, y2] = box.map((v) => Math.round(v));
+  const w = Math.min(frame.width, x2) - Math.max(0, x1);
+  const h = Math.min(frame.height, y2) - Math.max(0, y1);
+  if (w < 4 || h < 4) return null;
+  sigCanvas ??= document.createElement("canvas");
+  sigCanvas.width = size;
+  sigCanvas.height = size;
+  const ctx = sigCanvas.getContext("2d", { willReadFrequently: true })!;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(frame, Math.max(0, x1), Math.max(0, y1), w, h, 0, 0, size, size);
+  const px = ctx.getImageData(0, 0, size, size).data;
+  const grey: number[] = [];
+  for (let i = 0; i < px.length; i += 4) grey.push(0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2]);
+  return grey;
 }

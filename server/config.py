@@ -71,6 +71,7 @@ ENROLL_MAX_IMAGES = 8           # 5 guided shots + up to 2-3 with/without glasse
 ENROLL_MIN_SELF_SIM = 0.25      # each photo vs the others: lower -> "doesn't look like the same person"
 DUPLICATE_THRESHOLD = MATCH_THRESHOLD  # enrollment photos this similar to someone saved -> ask first
 ADD_PHOTOS_MIN_SIM = 0.20       # "add photos to X": photos must look at least a little like X
+NOTES_MAX_CHARS = 2000          # optional person description (stored in people.notes)
 
 TRACK_IOU = 0.3                 # IoU to associate a detection with an existing track
 TRACK_MAX_MISSES = 10           # frames a track survives without a detection
