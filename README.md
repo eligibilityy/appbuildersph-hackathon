@@ -14,13 +14,13 @@ A camera recognizes the people who visit a patient with dementia, listens to the
 
 | Feature | State |
 |---|---|
-| Live face recognition, enrollment, SQLite (Milestone 1) | ✅ done, tested end to end |
-| Code split by feature, with feature switches + smoke test | ✅ done |
-| Add photos to a person / merge Unknown into a person (server) | ✅ done (UI in progress) |
-| **Core:** robust recognition (quality gate, glasses/hair), visits + "last seen", speak name on arrival | ⏳ block 1 |
-| Whisper transcripts, full spoken brief, caregiver timeline | ⏳ block 2 |
-| Ollama/Qwen memory extraction, live captions | ⏳ block 3 |
-| README final (measured performance, disclosures), demo video | ⏳ |
+| Live face recognition, hands-free enrollment, name tags, Unknown faces saved | ✅ done |
+| Visits + "last seen", spoken brief on arrival (Piper), "Who's this?" replay | ✅ done |
+| Mic → Whisper transcripts per visit, live captions on the caregiver page | ✅ done |
+| Ollama/Qwen memory: summary + facts + auto-naming from introductions | ✅ done |
+| English, Taglish and Tagalog conversations understood (brief is spoken in English) | ✅ done, see [Languages](#languages) |
+| Caregiver dashboard: people, visit timeline, merge, add photos, edit, delete | ✅ done |
+| README final (measured performance on the demo laptop), demo video | ⏳ |
 
 ---
 
@@ -45,6 +45,14 @@ A camera recognizes the people who visit a patient with dementia, listens to the
 - **Only the LLM uses the GPU.** Faces, speech-to-text, and text-to-speech run on the CPU.
 
 ---
+
+## Languages
+
+Visitors can talk in **English, Taglish or Tagalog**. The spoken reminder is in **English**.
+
+- **Hearing (Whisper):** set to Tagalog (`WHISPER_LANGUAGE=tl`, the default). On the dev laptop, auto-detect misheard Tagalog as Latin, English or Indonesian. With `tl`, Tagalog was transcribed properly and English test sentences still came out word-for-word. `WHISPER_LANGUAGE=auto` turns auto-detect back on.
+- **Understanding (qwen3:4b):** the prompt has a short Tagalog word guide (who "ko"/"niyo" refer to, "apo", "uuwi", "ikakasal"...). It writes the summary and facts in simple English, keeping names and places as said. `memory.clean()` fixes the model's known slips (misspelled places, "Tita" taken as a name). On our Tagalog/Taglish test conversations it got the names, relationships and news right; the wording is sometimes clumsy (a name repeated).
+- **Speaking (Piper):** there is **no offline Tagalog voice** (none of Piper's 177 voices is Tagalog/Filipino), so the brief is spoken in English. In our tests, an Indonesian voice reading Tagalog was the most understandable, but it still sounds accented. A proper Tagalog voice would need a different TTS engine.
 
 ## Setup (one time per laptop, needs internet)
 
@@ -394,6 +402,7 @@ The full message protocol for upcoming milestones is in `CLAUDE.md`.
 | `CONFIRM_FRAMES` | 5 | Names take too long to appear → lower it. |
 | `UNKNOWN_MIN_FACE_PX` | 60 | Strangers far from the camera never get saved → lower it. |
 | `VISIT_END_SECONDS` | 30 | For the stage demo, set the env var `VISIT_END_SECONDS=10`. |
+| `WHISPER_LANGUAGE` | `tl` | Tagalog: handles Tagalog, Taglish and English. `auto` = let Whisper detect the language. |
 
 ---
 

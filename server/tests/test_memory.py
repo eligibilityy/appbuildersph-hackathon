@@ -139,5 +139,69 @@ class MemoryTests(unittest.TestCase):
         self.assertNotIn(open_, queued)
 
 
+class TagalogCleanupTests(unittest.TestCase):
+    """What qwen3:4b got wrong on Tagalog/Taglish transcripts (dev laptop runs), fixed in clean()."""
+    TR = "Magandang hapon po, Nanay. Ako po si Ana. Galing po ako sa Baguio kahapon. Uuwi po si Bea galing Cebu."
+
+    def summary(self, text, transcript=TR, known=None):
+        return memory.clean({"summary": text, "facts": [], "visitor_name": "", "relationship": ""},
+                            transcript, known)["summary"]
+
+    def test_misspelled_places_are_restored_from_the_transcript(self):
+        self.assertEqual(self.summary("Ana came from Bagungio yesterday."), "Ana came from Baguio yesterday.")
+        self.assertEqual(self.summary("Bea will come home from C.ceb."), "Bea will come home from Cebu.")
+        self.assertEqual(self.summary("Ana came from Bagu:100."), "Ana came from Baguio.")
+
+    def test_different_names_and_english_words_are_left_alone(self):
+        self.assertEqual(self.summary("Carla came in December."), "Carla came in December.")
+
+    def test_patient_title_is_never_the_visitor(self):
+        tr = "Hello po Tita! Nag-enroll na po ako sa nursing, first day ko po kanina."
+        self.assertEqual(self.summary("Tita just enrolled in nursing.", tr), "Your visitor just enrolled in nursing.")
+        self.assertEqual(self.summary("Lola just heard about the trip.", tr, known="Carlo"),
+                         "Carlo just heard about the trip.")
+
+    def test_known_name_replaces_your_visitor(self):
+        tr = "Lolo, ikakasal na po ako sa Disyembre."
+        self.assertEqual(self.summary("Your visitor is getting married in December.", tr, known="Carlo"),
+                         "Carlo is getting married in December.")
+
+    def test_doubled_word_is_collapsed(self):
+        tr = "Doon po sa simbahan sa Tagaytay."
+        self.assertEqual(self.summary("The wedding is at a church in Tagaytay Tagaytay.", tr),
+                         "The wedding is at a church in Tagaytay.")
+        self.assertEqual(self.summary("the church in Tagaytay church in Tagaytay", tr), "the church in Tagaytay")
+
+    def test_facts_use_the_name_not_he_or_she(self):
+        tr = "Lolo, ikakasal na po ako sa Disyembre."
+        out = memory.clean({"summary": "", "facts": ["he will get married in December"], "visitor_name": "",
+                            "relationship": ""}, tr, "Carlo")
+        self.assertEqual(out["facts"], ["Carlo will get married in December"])
+
+
+class WhisperLanguageTests(unittest.TestCase):
+    def load(self, value):
+        import importlib
+
+        import config
+        env = {} if value is None else {"WHISPER_LANGUAGE": value}
+        with mock.patch.dict(os.environ, env, clear=False):
+            if value is None:
+                os.environ.pop("WHISPER_LANGUAGE", None)
+            return importlib.reload(config).WHISPER_LANGUAGE
+
+    def tearDown(self):
+        import importlib
+
+        import config
+        os.environ.pop("WHISPER_LANGUAGE", None)
+        importlib.reload(config)
+
+    def test_tagalog_by_default_auto_on_request(self):
+        self.assertEqual(self.load(None), "tl")
+        self.assertIsNone(self.load("auto"))
+        self.assertEqual(self.load("en"), "en")
+
+
 if __name__ == "__main__":
     unittest.main()
