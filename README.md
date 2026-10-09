@@ -440,16 +440,21 @@ git push -u origin your-feature  # then open a PR; the lead merges into main
 
 ## Hardware
 
-Development/demo laptop: Intel Core i5-12450H, 16 GB RAM, NVIDIA GTX 1650 (4 GB VRAM), Windows 11.
+| Machine | CPU / RAM | GPU | Role |
+|---|---|---|---|
+| **Demo laptop** | *(fill in)* | NVIDIA RTX 3050 Ti Laptop GPU (4 GB VRAM) | Stage demo, checkpoint tests, final measurements |
+| Development laptop | Intel Core i5-12450H, 16 GB RAM | NVIDIA GTX 1650 (4 GB VRAM) | Development; backup demo machine |
+
+Both have 4 GB of VRAM, so the same models run on both: the LLM on the GPU, everything else on the CPU. "Runs on a budget laptop" refers to this 4 GB-VRAM class.
 
 ### Measured performance
 
-Only numbers we actually measured. More will be added as we test.
+Only numbers we actually measured, with the machine they were measured on. Final numbers will come from the demo laptop.
 
 | What | Result | Conditions |
 |---|---|---|
-| Face detect + embed, 1 face | ~40–60 ms per frame | 640×480 test image, CPU (`buffalo_s`, det size 320), i5-12450H |
-| Face model load (cached) | ~1–2 s | same laptop |
+| Face detect + embed, 1 face | ~40–60 ms per frame | Development laptop (i5-12450H), CPU, `buffalo_s`, det size 320, 640×480 test image |
+| Face model load (cached) | ~1–2 s | Development laptop |
 
 ---
 

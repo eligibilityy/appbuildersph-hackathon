@@ -52,7 +52,7 @@ Each stub already has its **final function signature** and is wired into the pip
 - Then `hub.broadcast_threadsafe({"type": "memory_updated", "person_id": ...})`. Print the LLM time.
 - Develop without the mic: add `server/tools/try_memory.py`, which inserts a visit with a typed transcript ("Hi Lola, it's Miguel, your grandson. I just started a new job in BGC.") and runs extraction.
 - **Done when:** that script saves the summary "Miguel just started a new job in BGC." and the matching facts.
-- First: `ollama pull qwen3:4b` and `ollama pull qwen3:1.7b`. They're large, so start them now.
+- First, on the demo laptop (yours): `ollama pull qwen3:4b` and `ollama pull qwen3:1.7b`. They're large, so start them now. See "Machines and models" below.
 
 **`mic-whisper` (Member 4), in `web/src/lib/audio.ts` + `server/audio.py`**
 - **Browser:**
@@ -70,12 +70,45 @@ Each stub already has its **final function signature** and is wired into the pip
 - Caregiver page: live captions from `transcript` events while a visit is open.
 - Patient view: show the brief text while it's spoken, even when `audio_url` is null.
 
+## Machines and models
+
+**Demo laptop = rdean123's** (NVIDIA RTX 3050 Ti Laptop GPU, 4 GB VRAM). Same 4 GB of VRAM as the GTX 1650 we designed for, so the model choices don't change: `qwen3:4b` on the GPU, and faces, Whisper and Piper on the CPU.
+- **It holds the full model set:** face model, Piper voice, Whisper `small`, `qwen3:4b` and `qwen3:1.7b` (backup).
+- **The checkpoint tests (1 AM, 3 AM Wi-Fi off), the rehearsal, the demo video and every number in the README run on this laptop.**
+- **Keep a separate demo copy on it,** so coding on a branch never gets mixed up with the demo:
+  ```powershell
+  git clone https://github.com/eligibilityy/appbuildersph-hackathon.git appbuildersph-demo
+  ```
+  Keep `appbuildersph-demo` on `main` and run `git pull` there at each checkpoint. It needs its own `server\.venv` (`pip install -r requirements.txt`) and `web\node_modules` (`npm install`). Model downloads are shared, apart from the Piper voice: copy `models\*.onnx*` into the demo copy.
+- **On demo runs:**
+  - keep it **plugged in** (laptop GPUs slow down on battery) and set Windows power mode to **Best performance**
+  - check that `ollama ps` shows **100% GPU** while the LLM is loaded
+  - if it doesn't (VRAM full), close other GPU apps or switch to `$env:OLLAMA_MODEL = "qwen3:1.7b"`
+
+**Backup demo laptop = Elijah's** (GTX 1650, 4 GB VRAM). After checkpoint 2, copy the full model set to it by USB (README → "Copy models by USB"), in case the demo laptop fails on stage.
+
+**Everyone else only downloads what their own feature needs:**
+
+| Person | Models on their laptop | Turn off the rest with |
+|---|---|---|
+| **rdean123** (demo laptop) | Everything (above) | — |
+| **Member 4** (voice) | Face model + Piper voice + Whisper (`base` is fine for development) | `$env:FEATURE_MEMORY = "0"` |
+| **ryuuu924** (visits) | Face model only | `$env:FEATURE_AUDIO = "0"; $env:FEATURE_MEMORY = "0"; $env:FEATURE_TTS = "0"` |
+| **Elijah** (UI) | Face model only, plus the full set after checkpoint 2 as the backup | same as ryuuu924 |
+
+The face model (`buffalo_s`, ~160 MB) downloads itself the first time the server starts.
+
+**Laptop weaker than this?** It's fine for development:
+- No NVIDIA GPU: Ollama runs on the CPU automatically; use `qwen3:1.7b`.
+- Slow CPU: use `$env:WHISPER_MODEL = "base"`.
+- Never quote speed numbers from a development laptop. Only the demo laptop's numbers go in the README.
+
 ## Timetable (Manila time)
 
 | Time | What | Checkpoint test |
 |---|---|---|
 | 11:30 PM - 1:00 AM | **Block A** (see table) | — |
-| **1:00 AM** | **Checkpoint 1:** Elijah merges `visits-brief` + `tts-piper` (+ whatever's ready) | Walk in → app **says** "This is Miguel, your grandson. You last saw Miguel…" |
+| **1:00 AM** | **Checkpoint 1:** Elijah merges `visits-brief` + `tts-piper` (+ whatever's ready); rdean123 pulls `main` into the demo copy and runs it | Walk in → app **says** "This is Miguel, your grandson. You last saw Miguel…" |
 | 1:00 - 3:00 AM | **Block B**; also connect `memory.enqueue` on visit end | — |
 | **3:00 AM** | **Checkpoint 2 + Wi-Fi OFF test** | Full loop offline: visit → talk → leave → return → brief includes the summary |
 | 3:00 - 5:00 AM | Bug fixes, polish, rehearse the demo script in `CLAUDE.md` | — |
