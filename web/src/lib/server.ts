@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from "react";
 // port) to localhost:8000, and big ones (>~8 KB, e.g. auth cookies from other projects) make
 // the WebSocket handshake fail with "431 Request Header Fields Too Large".
 export function serverUrl(): string {
-  return "http://127.0.0.1:8000";
+  return `http://127.0.0.1:${process.env.NEXT_PUBLIC_SERVER_PORT || "8000"}`;
 }
 
 export function wsUrl(): string {
