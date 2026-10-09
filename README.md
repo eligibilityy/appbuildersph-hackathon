@@ -277,12 +277,15 @@ server/
     quality.py         is this face good enough to trust? size, light, blur, head pose from landmarks
     routes.py          /enroll, /enroll/check (live guidance), /people/{id}/photos, /people/{id}/merge
   tests/             face unit tests (fake detector) + real-model tests (synthetic glasses)
-  visits.py          visit start/end, "last seen", spoken brief text (stub)
-  tts.py             Piper text-to-speech (stub)
-  audio.py           mic audio -> Whisper transcripts (stub)
-  memory.py          Ollama summaries + facts (stub)
+  visits.py          visit start/end, "last seen", spoken brief text (name, last seen, last summary)
+  tts.py             Piper text-to-speech (warmed up at startup)
+  audio.py           mic audio -> Whisper transcripts; flushes a visit's last words when it ends
+  memory.py          Ollama summaries + facts + auto-naming, on a worker thread
   tools/
     smoke_test.py      end-to-end test on a throwaway server (run before every push)
+    try_memory.py      LLM only: one typed transcript -> summary + facts (needs Ollama)
+    try_loop.py        whole loop with real models, no camera/mic: voice -> Whisper -> LLM -> spoken brief
+    test_visits.py     visit lifecycle + brief text tests
     test_appearances.py  focused registration, hourly upsert, coverage, and merge tests
     eval_faces.py      measures same-person vs different-person scores, to pick MATCH_THRESHOLD
   requirements.txt   Pinned Python dependencies
@@ -351,9 +354,14 @@ cd server
 ```
 It starts its own server on port 8765 with a throwaway data folder, so your real `server/data` is untouched. It uses InsightFace's bundled sample photos, so no real faces are involved. It checks enrollment, duplicate refusal, live recognition, Unknown creation, add photos, merge, edit, delete, and restart persistence. Expect `ALL PASSED`.
 
-Face unit tests and web tests (also no real faces):
+Before a demo run, check the models end to end (no camera or mic needed; throwaway database):
 ```powershell
-cd server; .\.venv\Scripts\python -m unittest discover -s tests   # 43 tests
+cd server; .\.venv\Scripts\python tools	ry_loop.py   # expect [loop] PASS
+```
+
+Server unit tests and web tests (also no real faces):
+```powershell
+cd server; .\.venv\Scripts\python -m unittest discover -s tests   # faces, memory, audio
 cd ..\web; npm test                                              # 32 tests: auto-capture, name tags, profile card
 ```
 

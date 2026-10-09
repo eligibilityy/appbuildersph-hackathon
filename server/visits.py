@@ -4,7 +4,7 @@ STUB — the signatures are final; fill in the bodies. Block 1 task:
   update(): open a visit when a person is confirmed in view; close it after they've been
             absent VISIT_END_SECONDS. On open: speak the brief (brief_text -> tts.speak).
             On close: memory.enqueue(visit_id).
-  brief_text(): add "You last saw {name} {humanized time}. {last summary}" once visits exist.
+  brief_text(): "This is {name}, your {relationship}. You last saw {name} {humanized time}. {last summary}"
 Unknown people: never speak to the patient (caregiver view only).
 """
 import threading
@@ -248,17 +248,18 @@ def open_visit_ids() -> list[int]:
 
 
 def append_transcript(visit_ids: set[int], text: str) -> list[int]:
-    """Append recognized speech to targeted visits that are still open; return IDs updated."""
+    """Append recognized speech to these visits; return IDs updated. A visit that just ended still
+    takes text (its last words are transcribed after it closes) until memory has processed it."""
     if not visit_ids or not text.strip():
         return []
     updated = []
     with db.connect() as c:
         for visit_id in visit_ids:
-            row = c.execute("SELECT transcript FROM visits WHERE id = ? AND ended_at IS NULL", (visit_id,)).fetchone()
+            row = c.execute("SELECT transcript FROM visits WHERE id = ? AND processed = 0", (visit_id,)).fetchone()
             if row is None:
                 continue
             transcript = " ".join(part for part in (row["transcript"], text.strip()) if part)
-            c.execute("UPDATE visits SET transcript = ? WHERE id = ? AND ended_at IS NULL", (transcript, visit_id))
+            c.execute("UPDATE visits SET transcript = ? WHERE id = ? AND processed = 0", (transcript, visit_id))
             updated.append(visit_id)
     return updated
 
@@ -301,12 +302,22 @@ def brief_text(person_id: int) -> str | None:
             "SELECT MIN(started_at) AS started_at FROM visits WHERE person_id = ? AND ended_at IS NULL",
             (person_id,),
         ).fetchone()
+        # What they talked about last time (memory.py writes it a few seconds after a visit ends).
+        latest = c.execute(
+            """SELECT summary FROM visits
+               WHERE person_id = ? AND ended_at IS NOT NULL AND TRIM(COALESCE(summary, '')) != ''
+               ORDER BY ended_at DESC LIMIT 1""",
+            (person_id,),
+        ).fetchone()
     last_seen = previous["ended_at"] if previous else p.get("last_seen_at")
     # last_seen_at keeps updating while they're in view; only a sighting before this visit counts.
     if not previous and last_seen and current["started_at"] and _parse(last_seen) >= _parse(current["started_at"]):
         last_seen = None
     if last_seen:
         text += f" You last saw {name} {humanized_elapsed(last_seen)} ago."
+    if latest:
+        summary = latest["summary"].strip()
+        text += " " + (summary if summary[-1] in ".!?" else summary + ".")
     return text
 
 
