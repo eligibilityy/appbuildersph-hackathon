@@ -37,7 +37,7 @@ def update(present_ids: set[int]) -> list[dict]:
 
     Returns events to broadcast, e.g.
       {"type": "visit_start", "visit_id": 1, "person_id": 2}
-      {"type": "speak", "text": "...", "audio_url": "/tts/abc.wav"}
+      {"type": "speak", "text": "...", "audio_url": "/tts/abc.wav", "person_id": 2}
       {"type": "visit_end", "visit_id": 1, "person_id": 2}
     """
     now_mono = time.monotonic()
@@ -95,7 +95,7 @@ def update(present_ids: set[int]) -> list[dict]:
             except Exception as exc:
                 print(f"[visits] speech synthesis failed: {exc!r}")
                 audio_url = None
-            events.append({"type": "speak", "text": text, "audio_url": audio_url})
+            events.append({"type": "speak", "text": text, "audio_url": audio_url, "person_id": person_id})
 
     for visit_id, person_id in ended:
         events.append({"type": "visit_end", "visit_id": visit_id, "person_id": person_id})
@@ -277,7 +277,7 @@ def replay_brief() -> list[dict]:
         except Exception as exc:
             print(f"[visits] speech synthesis failed: {exc!r}")
             audio_url = None
-        events.append({"type": "speak", "text": text, "audio_url": audio_url})
+        events.append({"type": "speak", "text": text, "audio_url": audio_url, "person_id": person_id})
     return events
 
 
@@ -297,10 +297,22 @@ def brief_text(person_id: int) -> str | None:
                ORDER BY ended_at DESC LIMIT 1""",
             (person_id,),
         ).fetchone()
+        current = c.execute(
+            "SELECT MIN(started_at) AS started_at FROM visits WHERE person_id = ? AND ended_at IS NULL",
+            (person_id,),
+        ).fetchone()
     last_seen = previous["ended_at"] if previous else p.get("last_seen_at")
+    # last_seen_at keeps updating while they're in view; only a sighting before this visit counts.
+    if not previous and last_seen and current["started_at"] and _parse(last_seen) >= _parse(current["started_at"]):
+        last_seen = None
     if last_seen:
         text += f" You last saw {name} {humanized_elapsed(last_seen)} ago."
     return text
+
+
+def _parse(timestamp: str) -> datetime:
+    t = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+    return t if t.tzinfo else t.astimezone()
 
 
 def humanized_elapsed(timestamp: str, now: datetime | None = None) -> str:

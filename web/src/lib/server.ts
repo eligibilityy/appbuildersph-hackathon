@@ -27,7 +27,7 @@ export type ServerEvent =
   | { type: "faces"; faces: FaceBox[] }
   | { type: "visit_start"; visit_id: number; person_id: number }
   | { type: "visit_end"; visit_id: number; person_id: number }
-  | { type: "speak"; text: string; audio_url: string | null }
+  | { type: "speak"; text: string; audio_url: string | null; person_id?: number | null }
   | { type: "transcript"; visit_id: number; text: string }
   | { type: "memory_updated"; person_id: number }
   | { type: "appearance_updated"; person_id: number };
