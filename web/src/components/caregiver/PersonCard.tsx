@@ -133,7 +133,7 @@ export default function PersonCard({ p, version, knownPeople, onChanged, onSelec
       {p.name_source === "auto" && (
         <p className="rounded-lg bg-primary/5 px-3 py-2 text-footnote text-muted-foreground">
           Name picked up from a conversation.{" "}
-          <button className="font-medium text-primary hover:underline" onClick={() => setEditing(true)}>
+          <button type="button" className="font-medium text-primary hover:underline" onClick={() => setEditing(true)}>
             Confirm or fix it
           </button>
         </p>
@@ -142,7 +142,7 @@ export default function PersonCard({ p, version, knownPeople, onChanged, onSelec
       {unknown && (
         <div className="flex flex-col gap-2">
           <MergeControl unknown={p} knownPeople={knownPeople} onMerged={onChanged} />
-          <Button variant="outline" className="w-full" onClick={() => setEditing(true)}>
+          <Button type="button" variant="outline" className="w-full" onClick={() => setEditing(true)}>
             <Pencil /> It&apos;s someone new — name them
           </Button>
         </div>
