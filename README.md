@@ -313,7 +313,8 @@ web/src/
   components/CameraCapture.tsx Manual guided photo capture, used by "Add photos"
   components/AutoEnrollCamera.tsx  Hands-free enrollment camera + holographic scan overlay
   components/FaceOverlay.tsx   Video + scan visuals + clickable name tags (no boxes)
-  components/patient/          SpeechBubble (spoken brief beside the visitor's face), DateClock, WhoButton,
+  components/patient/          SpeechBubble (spoken brief beside the visitor's face), DateClock, MicMeter (live mic
+                               level + whether audio is being transcribed), WhoButton,
                                CameraErrorCard, PersonProfileCard (opened from a name tag)
   components/caregiver/        PersonCard, MergeControl, AddPhotosDialog, EditPersonDialog
   lib/api.ts                   Typed REST calls (people, enroll, addPhotos, merge, ...)
