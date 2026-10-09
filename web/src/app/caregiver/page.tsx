@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { UserPlus, Users } from "lucide-react";
 import AppHeader from "@/components/app/AppHeader";
 import PersonCard from "@/components/caregiver/PersonCard";
+import LiveCaptions, { useLiveCaptions } from "@/components/caregiver/LiveCaptions";
 import PersonDetail from "@/components/caregiver/PersonDetail";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -69,15 +70,21 @@ export default function CaregiverPage() {
     setDetailLoading(false);
   }
 
+  // Live captions of open visits (visit_start / transcript / visit_end events).
+  const { live, onEvent: onCaptionEvent } = useLiveCaptions();
+
   // Refresh whenever the server says something changed (new Unknown, enrollment, merge, new appearance).
   const onEvent = useCallback(
     (e: ServerEvent) => {
+      onCaptionEvent(e);
       if (e.type === "memory_updated" || e.type === "appearance_updated") {
         load();
         if (selectedId === e.person_id) loadDetail(e.person_id);
       }
+      // A visit ended (summary/facts may follow): refresh the open person's timeline.
+      if (e.type === "visit_end" && selectedId === e.person_id) loadDetail(e.person_id);
     },
-    [load, loadDetail, selectedId],
+    [load, loadDetail, onCaptionEvent, selectedId],
   );
   const { connected } = useServerSocket(onEvent);
 
@@ -88,24 +95,29 @@ export default function CaregiverPage() {
     return (
       <>
         <AppHeader />
-        <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6" aria-live="polite">
-          {detail ? (
-            <PersonDetail person={detail} version={version} onBack={closeDetail} />
-          ) : detailLoading ? (
-            <DetailSkeleton />
-          ) : (
-            <div className="mx-auto flex max-w-4xl flex-col items-start gap-3">
-              <p role="alert" className="w-full rounded-xl bg-destructive/10 p-4 text-body text-destructive">
-                {detailError ? `Unable to load this person: ${detailError}` : "This person may have been deleted."}
-              </p>
-              <div className="flex gap-2">
-                <Button variant="outline" onClick={closeDetail}>
-                  Back to people
-                </Button>
-                {detailError && <Button onClick={() => loadDetail(selectedId)}>Retry</Button>}
+        <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+          <div className="mx-auto max-w-4xl">
+            <LiveCaptions live={live} people={people} version={version} />
+          </div>
+          <div aria-live="polite">
+            {detail ? (
+              <PersonDetail person={detail} version={version} onBack={closeDetail} />
+            ) : detailLoading ? (
+              <DetailSkeleton />
+            ) : (
+              <div className="mx-auto flex max-w-4xl flex-col items-start gap-3">
+                <p role="alert" className="w-full rounded-xl bg-destructive/10 p-4 text-body text-destructive">
+                  {detailError ? `Unable to load this person: ${detailError}` : "This person may have been deleted."}
+                </p>
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={closeDetail}>
+                    Back to people
+                  </Button>
+                  {detailError && <Button onClick={() => loadDetail(selectedId)}>Retry</Button>}
+                </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </main>
       </>
     );
@@ -134,6 +146,8 @@ export default function CaregiverPage() {
         <p className="sr-only" role="status">
           {connected ? "Live updates connected" : "Live updates disconnected"}
         </p>
+
+        <LiveCaptions live={live} people={people} version={version} />
 
         {error && (
           <p role="alert" className="mb-6 rounded-xl bg-destructive/10 p-4 text-body text-destructive">

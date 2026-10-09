@@ -1,6 +1,7 @@
 "use client";
 
-import { CalendarClock, ChevronLeft, Eye, EyeOff, Sparkles } from "lucide-react";
+import { CalendarClock, ChevronLeft, Eye, EyeOff } from "lucide-react";
+import VisitTimeline from "@/components/caregiver/VisitTimeline";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -8,7 +9,7 @@ import { api, HourlyStatus, PersonDetail as PersonRecord } from "@/lib/api";
 import { initials, timeAgo } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-/** One person's details: registration, confirmed appearances, last-24-hours monitoring, facts. */
+/** One person's details: registration, visits (summary, facts, transcript), last 24 hours, appearances. */
 export default function PersonDetail({
   person,
   version,
@@ -71,6 +72,8 @@ export default function PersonDetail({
           {person.notes}
         </p>
       )}
+
+      <VisitTimeline visits={person.visits} facts={person.facts} />
 
       {/* Last 24 hours */}
       <section aria-labelledby="hourly-status-title" className="rounded-2xl border bg-card p-5">
@@ -161,19 +164,6 @@ export default function PersonDetail({
           </ol>
         )}
       </section>
-
-      {person.facts.length > 0 && (
-        <section aria-labelledby="person-facts-title" className="rounded-2xl border bg-card p-5">
-          <h3 id="person-facts-title" className="flex items-center gap-2 text-title">
-            <Sparkles className="size-5 text-primary" /> Remembered facts
-          </h3>
-          <ul className="mt-2 list-disc space-y-1 pl-5 text-body">
-            {person.facts.map((fact) => (
-              <li key={fact.id}>{fact.fact}</li>
-            ))}
-          </ul>
-        </section>
-      )}
     </section>
   );
 }
