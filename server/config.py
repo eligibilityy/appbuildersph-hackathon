@@ -49,6 +49,7 @@ TRACK_MAX_MISSES = 10           # frames a track survives without a detection
 
 # --- Visits ---
 VISIT_END_SECONDS = float(os.environ.get("VISIT_END_SECONDS", 30))
+MONITORING_GAP_SECONDS = float(os.environ.get("MONITORING_GAP_SECONDS", 5))
 
 # --- STT (CPU) ---
 WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "small")  # CPU-only fallback: "base"
@@ -66,4 +67,4 @@ PIPER_VOICE = MODELS_DIR / "en_US-lessac-medium.onnx"
 PIPER_LENGTH_SCALE = 1.15
 
 # --- Web ---
-CORS_ORIGINS = ["http://localhost:3000", "http://127.0.0.1:3000"]
+CORS_ORIGINS = ["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:3001"]

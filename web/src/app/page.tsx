@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import FaceOverlay from "@/components/FaceOverlay";
 import NameCard from "@/components/NameCard";
 import { playSpeech } from "@/lib/audio";
@@ -88,6 +89,25 @@ export default function PatientView() {
   return (
     <main className="fixed inset-0 select-none overflow-hidden bg-black text-white">
       <FaceOverlay videoRef={videoRef} faces={faces} frameSize={frameSize} />
+
+      <nav
+        aria-label="View navigation"
+        className="absolute left-4 top-4 z-20 flex max-w-[calc(100vw-5rem)] flex-wrap gap-2"
+      >
+        <Link
+          href="/"
+          aria-current="page"
+          className="rounded-md border border-white/20 bg-black/80 px-3 py-2 text-sm font-semibold text-white shadow-lg backdrop-blur hover:bg-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+        >
+          Patient View
+        </Link>
+        <Link
+          href="/caregiver"
+          className="rounded-md border border-white/20 bg-black/80 px-3 py-2 text-sm font-semibold text-white shadow-lg backdrop-blur hover:bg-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+        >
+          Caregiver Dashboard
+        </Link>
+      </nav>
 
       <div
         className={`absolute right-4 top-4 h-4 w-4 rounded-full ${connected ? "bg-green-500" : "bg-red-600"}`}
