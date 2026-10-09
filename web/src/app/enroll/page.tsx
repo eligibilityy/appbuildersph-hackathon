@@ -1,179 +1,128 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
-import { AlertCircle, Glasses, ShieldCheck, UserCheck } from "lucide-react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { AlertCircle, CircleCheck, Glasses, ShieldCheck, UserCheck, X } from "lucide-react";
 import { toast } from "sonner";
 import AppHeader from "@/components/app/AppHeader";
-import CameraCapture, { CaptureHint, PhotoMark } from "@/components/CameraCapture";
+import AutoEnrollCamera from "@/components/AutoEnrollCamera";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { api, ApiError, DuplicateCandidate, FrameCheck } from "@/lib/api";
-import { dataUrlToBlob, grabFrame } from "@/lib/camera";
+import { Textarea } from "@/components/ui/textarea";
+import { api, ApiError, DuplicateCandidate } from "@/lib/api";
+import { buildSteps, captureReducer, initialState, Sample } from "@/lib/autoCapture";
+import { dataUrlToBlob } from "@/lib/camera";
+import { initials } from "@/lib/format";
 import { cn } from "@/lib/utils";
-
-const STEPS = [
-  "Look straight at the camera",
-  "Turn your head slightly left",
-  "Turn your head slightly right",
-  "Lower your chin a little",
-  "Look straight and smile",
-];
-// A face saved only without glasses can be hard to recognise with them (and vice versa), so capture both.
-const GLASSES_STEPS = [
-  "Switch glasses (put them on, or take them off) and look straight",
-  "Glasses switched: turn your head slightly",
-];
-const CHECK_EVERY_MS = 700;
-const MIN_PHOTOS = 3;
 
 const RELATIONSHIPS = ["grandson", "granddaughter", "son", "daughter", "wife", "husband", "friend", "caregiver"];
 
-type Shot = { dataUrl: string; check?: FrameCheck; serverError?: string };
+type Saved = { id: number; name: string; notes: string };
 
 export default function EnrollPage() {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const checkCanvasRef = useRef<HTMLCanvasElement>(null);
-
+  const [state, dispatch] = useReducer(captureReducer, undefined, initialState);
   const [name, setName] = useState("");
   const [relationship, setRelationship] = useState("");
+  const [notes, setNotes] = useState("");
   const [glasses, setGlasses] = useState(false);
-  const steps = glasses ? [...STEPS, ...GLASSES_STEPS] : STEPS;
-  const [shots, setShots] = useState<(Shot | null)[]>([]);
-  const [live, setLive] = useState<FrameCheck | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [dups, setDups] = useState<DuplicateCandidate[] | null>(null);
+  const [saved, setSaved] = useState<Saved | null>(null);
 
-  const slots = steps.map((_, i) => shots[i] ?? null);
-  const next = slots.findIndex((s) => s === null);
-  const done = next === -1;
-  const taken = slots.filter((s): s is Shot => s !== null);
-  const bad = taken.filter((s) => s.serverError || s.check?.ok === false).length;
-  const canSave = name.trim().length > 0 && taken.length >= MIN_PHOTOS && !saving;
+  const phase = state.phase;
+  const busy = phase === "saving";
+  const scanning = phase === "starting" || phase === "scanning";
+  const blobs = useCallback(() => state.samples.map((s) => dataUrlToBlob(s.dataUrl)), [state.samples]);
 
-  // Live guidance: is there exactly one good face in view right now?
-  const busy = useRef(false);
-  useEffect(() => {
-    if (done) return;
-    const id = setInterval(async () => {
-      const video = videoRef.current;
-      const canvas = checkCanvasRef.current;
-      if (busy.current || !video || !canvas) return;
-      const f = grabFrame(video, canvas, 640, 0.7);
-      if (!f) return;
-      busy.current = true;
-      try {
-        setLive(await api.checkFrame(dataUrlToBlob(f.dataUrl)));
-      } catch {
-        setLive(null); // server not reachable: just no guidance
-      } finally {
-        busy.current = false;
-      }
-    }, CHECK_EVERY_MS);
-    return () => clearInterval(id);
-  }, [done]);
-
-  async function capture(slot: number, dataUrl: string) {
-    setShots((s) => withSlot(s, slot, { dataUrl }));
-    setError(null);
-    try {
-      const check = await api.checkFrame(dataUrlToBlob(dataUrl));
-      setShots((s) => (s[slot]?.dataUrl === dataUrl ? withSlot(s, slot, { dataUrl, check }) : s));
-    } catch {
-      /* the server re-checks every photo on save anyway */
-    }
-  }
-
-  function retake(i: number) {
-    setShots((s) => withSlot(s, i, null));
-    setError(null);
-  }
-
-  function finished(title: string, description?: string) {
-    toast.success(title, {
-      description: description ?? "They'll be recognized on the patient view.",
-      action: { label: "View people", onClick: () => (window.location.href = "/caregiver") },
-    });
-    setShots([]);
+  function start() {
+    if (!name.trim()) return;
     setDups(null);
+    dispatch({ type: "START", steps: buildSteps(glasses), now: performance.now() });
+  }
+
+  function cancel() {
+    dispatch({ type: "CANCEL" }); // stops the camera and discards the photos taken so far
+    setDups(null);
+  }
+
+  function reset() {
+    cancel();
+    setSaved(null);
     setName("");
     setRelationship("");
+    setNotes("");
     setGlasses(false);
-    setError(null);
   }
 
-  function failed(e: unknown) {
-    if (e instanceof ApiError && e.status === 409 && e.candidates.length) {
-      setDups(e.candidates);
-      return;
-    }
-    if (e instanceof ApiError && e.photos.length) {
-      // Map the server's photo indexes (in the order we sent them) back to our slots.
-      const sentSlots = slots.map((s, i) => (s ? i : -1)).filter((i) => i >= 0);
-      setShots((s) => {
-        const copy = [...s];
-        for (const p of e.photos) {
-          const slot = sentSlots[p.index];
-          if (copy[slot]) copy[slot] = { ...copy[slot]!, serverError: p.reason };
+  const save = useCallback(
+    async (force = false) => {
+      if (!name.trim()) {
+        dispatch({ type: "SAVE_START" });
+        dispatch({ type: "SAVE_FAILED", message: "Enter a name to finish.", now: performance.now() });
+        return;
+      }
+      setDups(null);
+      dispatch({ type: "SAVE_START" });
+      try {
+        const person = await api.enroll(name.trim(), relationship.trim(), blobs(), force, notes.trim());
+        dispatch({ type: "SAVED" });
+        setSaved({ id: person.id, name: person.name ?? name.trim(), notes: notes.trim() });
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 409 && e.candidates.length) {
+          setDups(e.candidates);
+          dispatch({ type: "SAVE_FAILED", message: e.message, now: performance.now() });
+        } else if (e instanceof ApiError && e.photos.length) {
+          // Retake just the photos the server rejected; the scan resumes by itself.
+          dispatch({
+            type: "SAVE_FAILED",
+            message: `Some photos need retaking: ${e.message}`,
+            retakeSamples: e.photos.map((p) => p.index),
+            now: performance.now(),
+          });
+        } else {
+          dispatch({ type: "SAVE_FAILED", message: e instanceof Error ? e.message : String(e), now: performance.now() });
         }
-        return copy;
-      });
-      setError("Some photos need to be retaken — tap × on a photo marked in red.");
-      return;
-    }
-    const msg = e instanceof Error ? e.message : String(e);
-    setError(msg);
-    toast.error("Couldn't save", { description: msg });
-  }
+      }
+    },
+    [name, relationship, notes, blobs],
+  );
 
-  const blobs = () => taken.map((s) => dataUrlToBlob(s.dataUrl));
-
-  async function save(force = false) {
-    if (!name.trim()) return setError("Enter a name.");
-    if (taken.length < MIN_PHOTOS) return setError(`Take at least ${MIN_PHOTOS} photos.`);
-    setSaving(true);
-    setError(null);
-    setDups(null);
-    try {
-      const person = await api.enroll(name.trim(), relationship.trim(), blobs(), force);
-      finished(`${person.name} was added`);
-    } catch (e) {
-      failed(e);
-    } finally {
-      setSaving(false);
-    }
-  }
+  // All photos captured -> save automatically (once per set of photos).
+  const savedFor = useRef<Sample[] | null>(null);
+  useEffect(() => {
+    if (phase !== "complete" || state.error || dups || savedFor.current === state.samples) return;
+    savedFor.current = state.samples;
+    save();
+  }, [phase, state.error, state.samples, dups, save]);
 
   /** "Yes, it's them": add these photos to the existing person instead of creating a duplicate. */
   async function addToExisting(c: DuplicateCandidate) {
-    setSaving(true);
+    dispatch({ type: "SAVE_START" });
     try {
       await api.addPhotos(c.id, blobs());
       if (c.is_unknown) {
         // A face the camera already saw as "Unknown #N": naming it keeps their visit history.
-        await api.updatePerson(c.id, { name: name.trim(), relationship: relationship.trim() || null });
-        finished(`${name.trim()} was added`, `Kept the earlier visits recorded as ${c.name}.`);
+        await api.updatePerson(c.id, {
+          name: name.trim(),
+          relationship: relationship.trim() || null,
+          ...(notes.trim() ? { notes: notes.trim() } : {}),
+        });
+        toast.success(`${name.trim()} was added`, { description: `Kept the earlier visits recorded as ${c.name}.` });
+        setSaved({ id: c.id, name: name.trim(), notes: notes.trim() });
       } else {
-        finished(`Added ${taken.length} photos to ${c.name}`);
+        toast.success(`Added ${state.samples.length} photos to ${c.name}`);
+        setSaved({ id: c.id, name: c.name ?? name.trim(), notes: "" });
       }
+      setDups(null);
+      dispatch({ type: "SAVED" });
     } catch (e) {
       setDups(null);
-      failed(e);
-    } finally {
-      setSaving(false);
+      dispatch({ type: "SAVE_FAILED", message: e instanceof Error ? e.message : String(e), now: performance.now() });
     }
   }
-
-  const marks: (PhotoMark | null)[] = slots.map((s) => {
-    if (!s) return null;
-    const problem = s.serverError ?? (s.check?.ok === false ? (s.check.reason ?? "No usable face") : null);
-    if (problem) return { ok: false, message: problem };
-    return s.check?.ok ? { ok: true } : null;
-  });
 
   return (
     <>
@@ -182,139 +131,167 @@ export default function EnrollPage() {
         <div className="mb-6">
           <h1 className="text-large-title">Add a person</h1>
           <p className="mt-1 text-body text-muted-foreground">
-            Take {steps.length} photos from slightly different angles, one person in frame.
+            Fill in who they are, then start the face scan. Photos are taken automatically; one person in view.
           </p>
         </div>
 
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
           <Card className="p-4 sm:p-5">
-            <CameraCapture
-              steps={steps}
-              slots={slots.map((s) => s?.dataUrl ?? null)}
-              onCapture={capture}
-              onRetake={retake}
-              marks={marks}
-              hint={liveHint(live)}
-              videoRef={videoRef}
+            <AutoEnrollCamera
+              state={state}
+              dispatch={dispatch}
+              canStart={!!name.trim()}
+              startHint="Enter their name first."
+              onStart={start}
             />
-            <canvas ref={checkCanvasRef} className="hidden" />
-            {bad > 0 && <p className="text-body text-destructive">Tap × on a photo marked in red to retake it.</p>}
           </Card>
 
           <Card className="h-fit">
             <CardContent>
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  save();
-                }}
-                className="flex flex-col gap-5"
-              >
-                <div className="flex flex-col gap-2">
-                  <Label htmlFor="name" className="text-footnote font-medium text-muted-foreground">
-                    Name
-                  </Label>
-                  <Input
-                    id="name"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="Miguel"
-                    autoComplete="off"
-                  />
-                </div>
-
-                <div className="flex flex-col gap-2">
-                  <Label htmlFor="relationship" className="text-footnote font-medium text-muted-foreground">
-                    Relationship to the patient
-                  </Label>
-                  <Input
-                    id="relationship"
-                    value={relationship}
-                    onChange={(e) => setRelationship(e.target.value)}
-                    placeholder="grandson"
-                    autoComplete="off"
-                  />
-                  <div className="flex flex-wrap gap-1.5 pt-1">
-                    {RELATIONSHIPS.map((r) => (
-                      <button
-                        key={r}
-                        type="button"
-                        onClick={() => setRelationship(r)}
-                        className={cn(
-                          "h-8 rounded-full border px-3 text-footnote font-medium transition-colors duration-150 outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
-                          relationship === r
-                            ? "border-primary bg-primary/10 text-primary"
-                            : "bg-card text-muted-foreground hover:bg-muted hover:text-foreground",
-                        )}
-                      >
-                        {r}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <label
-                  className={cn(
-                    "flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition-colors duration-150",
-                    glasses ? "border-primary bg-primary/5" : "hover:bg-muted",
-                  )}
+              {phase === "done" && saved ? (
+                <DonePanel saved={saved} onAnother={reset} />
+              ) : (
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (phase === "idle" || phase === "error") start();
+                  }}
+                  className="flex flex-col gap-5"
                 >
-                  <input
-                    type="checkbox"
-                    checked={glasses}
-                    onChange={(e) => setGlasses(e.target.checked)}
-                    className="mt-0.5 size-5 shrink-0 accent-[var(--primary)]"
-                  />
-                  <span className="flex-1">
-                    <span className="flex items-center gap-1.5 text-body font-medium">
-                      <Glasses className="size-4 text-muted-foreground" /> Sometimes wears glasses
-                    </span>
-                    <span className="mt-0.5 block text-footnote text-muted-foreground">
-                      Adds 2 photos with the other look, so they&apos;re recognized with and without them.
-                    </span>
-                  </span>
-                </label>
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="name" className="text-footnote font-medium text-muted-foreground">
+                      Name
+                    </Label>
+                    <Input
+                      id="name"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      placeholder="Miguel"
+                      autoComplete="off"
+                    />
+                  </div>
 
-                <Separator />
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="relationship" className="text-footnote font-medium text-muted-foreground">
+                      Relationship to the patient
+                    </Label>
+                    <Input
+                      id="relationship"
+                      value={relationship}
+                      onChange={(e) => setRelationship(e.target.value)}
+                      placeholder="grandson"
+                      autoComplete="off"
+                    />
+                    <div className="flex flex-wrap gap-1.5 pt-1">
+                      {RELATIONSHIPS.map((r) => (
+                        <button
+                          key={r}
+                          type="button"
+                          onClick={() => setRelationship(r)}
+                          className={cn(
+                            "h-8 rounded-full border px-3 text-footnote font-medium transition-colors duration-150 outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+                            relationship === r
+                              ? "border-primary bg-primary/10 text-primary"
+                              : "bg-card text-muted-foreground hover:bg-muted hover:text-foreground",
+                          )}
+                        >
+                          {r}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
 
-                <div className="flex items-center justify-between text-body">
-                  <span className="text-muted-foreground">Photos</span>
-                  <span className={cn("font-medium", taken.length >= MIN_PHOTOS ? "text-success" : "text-foreground")}>
-                    {taken.length} of {steps.length}
-                    {taken.length < MIN_PHOTOS && <span className="text-muted-foreground"> · {MIN_PHOTOS} needed</span>}
-                  </span>
-                </div>
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="notes" className="text-footnote font-medium text-muted-foreground">
+                      Description <span className="font-normal">(optional)</span>
+                    </Label>
+                    <Textarea
+                      id="notes"
+                      value={notes}
+                      onChange={(e) => setNotes(e.target.value)}
+                      placeholder="A few words to help remember them. You can add this later."
+                      maxLength={2000}
+                      rows={3}
+                    />
+                  </div>
 
-                {error && (
-                  <p
-                    role="alert"
-                    className="flex items-start gap-2 rounded-lg bg-destructive/10 p-3 text-body text-destructive"
+                  <label
+                    className={cn(
+                      "flex items-start gap-3 rounded-xl border p-3 transition-colors duration-150",
+                      scanning ? "opacity-60" : "cursor-pointer",
+                      glasses ? "border-primary bg-primary/5" : !scanning && "hover:bg-muted",
+                    )}
                   >
-                    <AlertCircle className="mt-0.5 size-4 shrink-0" />
-                    {error}
+                    <input
+                      type="checkbox"
+                      checked={glasses}
+                      disabled={scanning}
+                      onChange={(e) => setGlasses(e.target.checked)}
+                      className="mt-0.5 size-5 shrink-0 accent-[var(--primary)]"
+                    />
+                    <span className="flex-1">
+                      <span className="flex items-center gap-1.5 text-body font-medium">
+                        <Glasses className="size-4 text-muted-foreground" /> Sometimes wears glasses
+                      </span>
+                      <span className="mt-0.5 block text-footnote text-muted-foreground">
+                        Adds 2 photos with the other look, so they&apos;re recognized with and without them.
+                      </span>
+                    </span>
+                  </label>
+
+                  <Separator />
+
+                  <div className="flex items-center justify-between text-body">
+                    <span className="text-muted-foreground">Face samples</span>
+                    <span className="font-medium">
+                      {state.samples.length} of{" "}
+                      {state.steps.length ? state.steps.length - state.results.filter((r) => r === "skipped").length : buildSteps(glasses).length}
+                    </span>
+                  </div>
+
+                  {state.error && phase !== "error" && !dups && (
+                    <p role="alert" className="flex items-start gap-2 rounded-lg bg-destructive/10 p-3 text-body text-destructive">
+                      <AlertCircle className="mt-0.5 size-4 shrink-0" />
+                      {state.error}
+                    </p>
+                  )}
+
+                  {dups ? (
+                    <DuplicatePanel
+                      candidates={dups}
+                      name={name.trim()}
+                      busy={busy}
+                      onAdd={addToExisting}
+                      onDifferent={() => save(true)}
+                      onCancel={cancel}
+                    />
+                  ) : phase === "idle" || phase === "error" ? (
+                    <Button type="submit" size="lg" disabled={!name.trim()} className="w-full">
+                      Start face scan
+                    </Button>
+                  ) : phase === "complete" ? (
+                    <Button type="button" size="lg" onClick={() => save()} className="w-full">
+                      Try saving again
+                    </Button>
+                  ) : (
+                    <Button type="button" size="lg" disabled className="w-full">
+                      {busy ? "Saving…" : "Scanning…"}
+                    </Button>
+                  )}
+
+                  {phase !== "idle" && !busy && (
+                    <Button type="button" variant="outline" onClick={cancel} className="w-full">
+                      <X /> Cancel
+                    </Button>
+                  )}
+
+                  <p className="flex items-start gap-2 text-footnote text-muted-foreground">
+                    <ShieldCheck className="mt-0.5 size-4 shrink-0 text-success" />
+                    The camera only runs during the scan. Photos stay on this computer, and cancelled scans are
+                    discarded.
                   </p>
-                )}
-
-                {dups ? (
-                  <DuplicatePanel
-                    candidates={dups}
-                    name={name.trim()}
-                    busy={saving}
-                    onAdd={addToExisting}
-                    onDifferent={() => save(true)}
-                    onCancel={() => setDups(null)}
-                  />
-                ) : (
-                  <Button type="submit" size="lg" disabled={!canSave} className="w-full">
-                    {saving ? "Saving…" : "Save person"}
-                  </Button>
-                )}
-
-                <p className="flex items-start gap-2 text-footnote text-muted-foreground">
-                  <ShieldCheck className="mt-0.5 size-4 shrink-0 text-success" />
-                  Good, even light on the face; avoid a bright window behind them. Photos stay on this computer.
-                </p>
-              </form>
+                </form>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -329,6 +306,60 @@ export default function EnrollPage() {
         </p>
       </main>
     </>
+  );
+}
+
+/** After saving: confirm, and let the caregiver add or edit the optional description right away. */
+function DonePanel({ saved, onAnother }: { saved: Saved; onAnother: () => void }) {
+  const [notes, setNotes] = useState(saved.notes);
+  const [savingNotes, setSavingNotes] = useState(false);
+  const [stored, setStored] = useState(saved.notes);
+  const [thumbVersion] = useState(() => Date.now());
+
+  async function saveNotes() {
+    setSavingNotes(true);
+    try {
+      await api.updatePerson(saved.id, { notes: notes.trim() || null });
+      setStored(notes.trim());
+      toast.success(notes.trim() ? "Description saved" : "Description cleared");
+    } catch (e) {
+      toast.error("Couldn't save the description", { description: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setSavingNotes(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-5" role="status">
+      <div className="flex items-center gap-3.5">
+        <Avatar className="size-14">
+          <AvatarImage src={api.thumbUrl(saved.id, thumbVersion)} alt="" className="object-cover" />
+          <AvatarFallback className="bg-secondary text-headline text-muted-foreground">{initials(saved.name)}</AvatarFallback>
+        </Avatar>
+        <div>
+          <p className="flex items-center gap-1.5 text-title">
+            <CircleCheck className="size-5 text-success" /> Enrollment complete
+          </p>
+          <p className="text-body text-muted-foreground">{saved.name} will be recognized on the patient view.</p>
+        </div>
+      </div>
+      <div className="flex flex-col gap-2">
+        <Label htmlFor="done-notes" className="text-footnote font-medium text-muted-foreground">
+          Description <span className="font-normal">(optional)</span>
+        </Label>
+        <Textarea id="done-notes" value={notes} onChange={(e) => setNotes(e.target.value)} maxLength={2000} rows={3} />
+        <Button type="button" variant="outline" onClick={saveNotes} disabled={savingNotes || notes.trim() === stored}>
+          {savingNotes ? "Saving…" : "Save description"}
+        </Button>
+      </div>
+      <Separator />
+      <Button type="button" size="lg" onClick={onAnother}>
+        Add another person
+      </Button>
+      <Button asChild variant="ghost">
+        <Link href="/caregiver">Go to People</Link>
+      </Button>
+    </div>
   );
 }
 
@@ -371,23 +402,8 @@ function DuplicatePanel({
         No — this is a different person
       </Button>
       <Button type="button" variant="ghost" onClick={onCancel} disabled={busy}>
-        Cancel
+        Cancel and discard the photos
       </Button>
     </div>
   );
-}
-
-function withSlot(shots: (Shot | null)[], i: number, shot: Shot | null) {
-  const copy = [...shots];
-  while (copy.length <= i) copy.push(null);
-  copy[i] = shot;
-  return copy;
-}
-
-function liveHint(c: FrameCheck | null): CaptureHint | null {
-  if (!c) return null;
-  if (c.match && c.faces === 1) return { text: `Already saved as ${c.match.name}`, tone: "warn" };
-  if (c.ok) return { text: "✓ Face found — ready", tone: "ok" };
-  const reason = c.reason ?? "No face found";
-  return { text: reason.charAt(0).toUpperCase() + reason.slice(1), tone: "info" };
 }
