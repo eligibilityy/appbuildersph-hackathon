@@ -147,5 +147,32 @@ class AskTests(unittest.TestCase):
             self.assertEqual(c.execute("SELECT COUNT(*) FROM visits WHERE person_id = ?", (pid,)).fetchone()[0], 0)
 
 
+class OllamaTimeoutTests(unittest.TestCase):
+    """A stuck Ollama (accepts the connection, never answers) must not hang the server forever."""
+
+    def test_llm_calls_give_up_instead_of_hanging(self):
+        import socket
+        import threading
+        import time
+
+        srv = socket.socket()
+        srv.bind(("127.0.0.1", 0))
+        srv.listen(5)
+        self.addCleanup(srv.close)
+        held = []
+        threading.Thread(target=lambda: [held.append(srv.accept()) for _ in range(2)], daemon=True).start()
+        with (
+            mock.patch.object(config, "OLLAMA_HOST", f"http://127.0.0.1:{srv.getsockname()[1]}"),
+            mock.patch.object(config, "OLLAMA_TIMEOUT_SECONDS", 1),
+            mock.patch.object(memory, "_client", None),
+        ):
+            for call in (lambda: memory.call_llm("Hi Lola, it's Miguel.", None, None),
+                         lambda: ask.call_llm("Who visited today?", "notes")):
+                t = time.perf_counter()
+                with self.assertRaises(Exception):
+                    call()
+                self.assertLess(time.perf_counter() - t, 10)
+
+
 if __name__ == "__main__":
     unittest.main()

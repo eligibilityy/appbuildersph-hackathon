@@ -118,7 +118,7 @@ def _ollama():
     if _client is None:
         import ollama
 
-        _client = ollama.Client(host=config.OLLAMA_HOST)
+        _client = ollama.Client(host=config.OLLAMA_HOST, timeout=config.OLLAMA_TIMEOUT_SECONDS)
     return _client
 
 
