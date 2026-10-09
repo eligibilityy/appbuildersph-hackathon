@@ -13,6 +13,7 @@ import re
 import threading
 import time
 
+import audio
 import config
 import db
 import hub
@@ -85,6 +86,7 @@ def _run():
     while True:
         vid = _queue.get()
         try:
+            audio.finish_visit(vid)  # transcribe the visit's last words first
             process_visit(vid)
         except Exception as e:  # keep the worker alive; the visit stays processed=0 for a later retry
             print(f"[memory] visit {vid}: failed: {e!r}")
