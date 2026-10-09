@@ -3,6 +3,7 @@
 Run from this folder:  .venv/Scripts/python main.py   (or: python -m uvicorn main:app --port 8000)
 """
 import asyncio
+import threading
 from contextlib import asynccontextmanager
 
 import config  # noqa: F401  (sets offline env vars before model libs load)
@@ -27,9 +28,21 @@ async def lifespan(app: FastAPI):
     hub.engine = FaceEngine()
     if config.FEATURES["memory"]:
         memory.start()
+    if config.FEATURES["tts"]:
+        if tts.available():
+            threading.Thread(target=_warm_tts, name="piper-warmup", daemon=True).start()
+        else:
+            print(f"[tts] voice missing: {config.PIPER_VOICE} (see README > Models). Briefs will be text only.")
     enabled = [name for name, on in config.FEATURES.items() if on]
     print(f"[server] features: faces, {', '.join(enabled) or '(none else)'}")
     yield
+
+
+def _warm_tts():
+    try:
+        tts.warm_up()
+    except Exception as e:
+        print(f"[tts] warm-up failed: {e!r}")
 
 
 app = FastAPI(lifespan=lifespan)
@@ -55,6 +68,7 @@ def health():
         "people": len(hub.engine.people),
         "embeddings": int(len(hub.engine.gallery_ids)),
         "face_model": config.FACE_MODEL,
+        "voice": config.FEATURES["tts"] and tts.available(),
         "features": {"faces": True, **config.FEATURES},
     }
 

@@ -54,6 +54,26 @@ def speak(text: str) -> str | None:
     return f"/tts/{clip_id}.wav"
 
 
+def available() -> bool:
+    """True when the Piper voice files are in /models."""
+    return config.PIPER_VOICE.exists() and config.PIPER_VOICE.with_suffix(".onnx.json").exists()
+
+
+def warm_up() -> None:
+    """Load the voice and run one throwaway synthesis, so the first brief isn't seconds late
+    (and the camera loop doesn't stall on it). Call once at startup, off the main thread."""
+    import io
+
+    from piper import SynthesisConfig
+
+    started = time.perf_counter()
+    with _synthesis_lock:
+        voice = _get_voice()
+        with wave.open(io.BytesIO(), "wb") as wav_file:
+            voice.synthesize_wav("Hello.", wav_file, syn_config=SynthesisConfig(length_scale=config.PIPER_LENGTH_SCALE))
+    print(f"[tts] voice ready in {time.perf_counter() - started:.2f}s", flush=True)
+
+
 @router.get("/tts/{clip_id}.wav")
 def tts_file(clip_id: str):
     path = config.TTS_DIR / f"{clip_id}.wav"
