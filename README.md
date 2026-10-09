@@ -263,6 +263,7 @@ server/
   memory.py          Ollama summaries + facts (stub)
   tools/
     smoke_test.py      end-to-end test on a throwaway server (run before every push)
+    test_appearances.py  focused registration, hourly upsert, coverage, and merge tests
     eval_faces.py      measures same-person vs different-person scores, to pick MATCH_THRESHOLD
   requirements.txt   Pinned Python dependencies
   data/              (gitignored, auto-created) app.db, thumbs/, tts/, eval/
@@ -301,6 +302,20 @@ $env:FEATURE_AUDIO = "0"; $env:FEATURE_MEMORY = "0"   # also FEATURE_TTS, FEATUR
 ```
 `GET /health` lists which features are on.
 
+### Registration and appearance history
+
+New person records store `registered_at` in UTC ISO 8601 form. Confirmed recognition updates `first_seen_at` and `last_seen_at`; `appearances` stores one row per person and UTC hour, with `first_seen_at` and `last_seen_at` for that hour. A SQLite unique constraint on `(person_id, hour_bucket)` and an atomic upsert prevent frame-level duplicates. Repeated writes are throttled to once per person per hour every 10 seconds while the person remains in view.
+
+On existing databases, initialization backfills `registered_at` from `created_at` and first/last appearance timestamps from available visit start times. Historical timezone-naive values are interpreted in the server machine's local timezone and normalized to UTC. Missing source timestamps stay `NULL` and are shown as `Not available`.
+
+The existing `GET /people/{id}` response now also includes:
+
+- `registered_at`, `first_seen_at`, and `last_seen_at` on the person.
+- `appearances`: newest-first hourly records with `hour_bucket`, first/last detection times, and source.
+- `hourly_status`: the latest 24 hour buckets with `seen`, `not_seen`, or `monitoring_unavailable`, plus `in_progress` for the current hour.
+
+`not_seen` is returned only when processed camera frames prove uninterrupted coverage of the complete hour. A frame gap longer than `MONITORING_GAP_SECONDS` (default 5 seconds), a disconnect, or a restart splits or closes the coverage interval; absence is otherwise reported as `monitoring_unavailable`. The current hour is always marked in progress. All logs remain in the local SQLite database; no scheduler or network service is used.
+
 ### Smoke test (run before every push)
 
 ```powershell
@@ -318,7 +333,7 @@ It starts its own server on port 8765 with a throwaway data folder, so your real
 | POST | `/enroll` | multipart: `name`, `relationship`, 3–5 `images` (each must contain exactly one face) |
 | POST | `/people/{id}/photos` | multipart: 1–5 `images`. Adds photos to someone already known (e.g. now wearing glasses) |
 | POST | `/people/{id}/merge` | JSON `{into_person_id}`. "Unknown #3 is actually Miguel": moves their faces, visits and facts, then deletes the Unknown |
-| GET | `/people` · `/people/{id}` | List people / one person with visits + facts |
+| GET | `/people` · `/people/{id}` | List people / one person with visits, facts, and hourly appearance history |
 | PATCH | `/people/{id}` | JSON `{name, relationship, notes}`; naming an unknown makes them known |
 | DELETE | `/people/{id}` | Delete a person and everything about them |
 | GET | `/visits?person_id=` | Visit history |
