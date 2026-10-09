@@ -27,43 +27,50 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { api } from "@/lib/api";
-import { initials, timeAgo } from "@/lib/format";
+import { initials } from "@/lib/format";
 import { Person } from "@/lib/server";
-import { cn } from "@/lib/utils";
 
 type Props = {
   p: Person;
   version: number; // bump to refresh the thumbnail
-  onSave: (p: Person, name: string, relationship: string) => void;
-  onDelete: (p: Person) => void;
-  onSelect: (p: Person) => void;
+  knownPeople: Person[];
+  onChanged: () => void;
+  onSelect: () => void;
 };
 
-// TODO (block 1, frontend): on Unknown cards, add "This is…" <select> of known people -> api.merge();
-// on known cards, add "Add photos" (camera capture, like /enroll) -> api.addPhotos().
-export default function PersonCard({ p, version, onSave, onDelete, onSelect }: Props) {
-  const [name, setName] = useState(p.is_unknown ? "" : (p.name ?? ""));
-  const [relationship, setRelationship] = useState(p.relationship ?? "");
+export default function PersonCard({ p, version, knownPeople, onChanged, onSelect }: Props) {
+  const [editing, setEditing] = useState(false);
+  const [addingPhotos, setAddingPhotos] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const isUnknown = Boolean(p.is_unknown);
+
+  async function remove() {
+    try {
+      await api.deletePerson(p.id);
+      toast.success(`${p.name ?? "Person"} deleted`);
+      onChanged();
+    } catch (err) {
+      toast.error("Couldn't delete this person", { description: err instanceof Error ? err.message : String(err) });
+    }
+  }
 
   return (
-    <li className={`rounded-lg border p-4 ${p.is_unknown ? "border-amber-400 bg-amber-50" : ""}`}>
+    <li className={`rounded-xl border bg-card p-4 ${isUnknown ? "border-amber-400 bg-amber-50" : ""}`}>
       <button
         type="button"
-        onClick={() => onSelect(p)}
+        onClick={onSelect}
         className="mb-3 flex w-full min-w-0 items-start gap-4 rounded-md text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
         aria-label={`View details for ${p.name ?? "unnamed person"}`}
       >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={api.thumbUrl(p.id, version)}
-          alt=""
-          className="h-24 w-24 shrink-0 rounded-md bg-neutral-200 object-cover"
-        />
+        <Avatar size="lg" className="size-16">
+          <AvatarImage src={api.thumbUrl(p.id, version)} alt="" />
+          <AvatarFallback>{initials(p.name)}</AvatarFallback>
+        </Avatar>
         <span className="flex min-w-0 flex-1 flex-col gap-2">
-          <span className="flex flex-wrap items-center gap-2">
+          <span className="flex min-w-0 flex-wrap items-center gap-2">
             <span className="truncate text-lg font-semibold">{p.name ?? "Unnamed"}</span>
-            {p.is_unknown ? <Badge className="bg-amber-200">needs a name</Badge> : null}
-            {p.name_source === "auto" ? <Badge className="bg-blue-100">auto-named, please confirm</Badge> : null}
+            {isUnknown && <Badge variant="secondary">Needs a name</Badge>}
+            {p.name_source === "auto" && <Badge variant="outline">Confirm name</Badge>}
           </span>
           <span className="text-sm text-neutral-600">
             {p.relationship ?? "Relationship not recorded"}
@@ -87,7 +94,7 @@ export default function PersonCard({ p, version, onSave, onDelete, onSelect }: P
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="min-w-44">
             <DropdownMenuItem onSelect={() => setEditing(true)}>
-              <Pencil /> {unknown ? "Name this person" : "Edit"}
+              <Pencil /> {isUnknown ? "Name this person" : "Edit"}
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => setAddingPhotos(true)}>
               <Camera /> Add photos
@@ -103,16 +110,16 @@ export default function PersonCard({ p, version, onSave, onDelete, onSelect }: P
       {p.name_source === "auto" && (
         <p className="rounded-lg bg-primary/5 px-3 py-2 text-footnote text-muted-foreground">
           Name picked up from a conversation.{" "}
-          <button className="font-medium text-primary hover:underline" onClick={() => setEditing(true)}>
+          <button type="button" className="font-medium text-primary hover:underline" onClick={() => setEditing(true)}>
             Confirm or fix it
           </button>
         </p>
       )}
 
-      {unknown && (
+      {isUnknown && (
         <div className="flex flex-col gap-2">
           <MergeControl unknown={p} knownPeople={knownPeople} onMerged={onChanged} />
-          <Button variant="outline" className="w-full" onClick={() => setEditing(true)}>
+          <Button type="button" variant="outline" className="w-full" onClick={() => setEditing(true)}>
             <Pencil /> It&apos;s someone new — name them
           </Button>
         </div>
@@ -138,10 +145,6 @@ export default function PersonCard({ p, version, onSave, onDelete, onSelect }: P
       </AlertDialog>
     </li>
   );
-}
-
-function Badge({ children, className }: { children: React.ReactNode; className: string }) {
-  return <span className={`rounded px-2 py-0.5 text-xs ${className}`}>{children}</span>;
 }
 
 function formatShortDate(value: string | null) {
