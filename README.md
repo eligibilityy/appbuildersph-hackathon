@@ -1,3 +1,5 @@
+<img src="web\public\crouie.png" alt="Crouie Logo" width="150">
+
 # Crouie
 
 An AI-powered memory aid, mainly for patients with dementia. *Built for AppBuildersPH Hackathon 2026.*
