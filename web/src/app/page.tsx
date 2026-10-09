@@ -8,6 +8,7 @@ import FaceOverlay, { TagAnchor } from "@/components/FaceOverlay";
 import NameCard from "@/components/NameCard";
 import CameraErrorCard from "@/components/patient/CameraErrorCard";
 import PersonProfileCard from "@/components/patient/PersonProfileCard";
+import SpokenCaption, { Spoken } from "@/components/patient/SpokenCaption";
 import WhoButton from "@/components/patient/WhoButton";
 import { playSpeech } from "@/lib/audio";
 import { grabFrame, useCamera } from "@/lib/camera";
@@ -28,6 +29,7 @@ export default function PatientView() {
   const cardSeenAt = useRef(0);
   const [selected, setSelected] = useState<{ personId: number; anchor: TagAnchor } | null>(null);
   const [profileVersion, setProfileVersion] = useState(0);
+  const [spoken, setSpoken] = useState<Spoken | null>(null); // what the app is saying right now
   const seenAt = useRef(new Map<number, number>()); // person_id -> last time a confirmed face was in view
   const selectedRef = useRef<number | null>(null);
   selectedRef.current = selected?.personId ?? null;
@@ -51,8 +53,10 @@ export default function PatientView() {
             : { name: known.name!, relationship: known.relationship },
         );
       }
-    } else if (e.type === "speak" && e.audio_url) {
-      playSpeech(e.audio_url);
+    } else if (e.type === "speak") {
+      // Always show the words; play the audio when the server could make it.
+      if (e.text) setSpoken({ id: Date.now(), text: e.text });
+      if (e.audio_url) playSpeech(e.audio_url);
     } else if (e.type === "memory_updated" && e.person_id === selectedRef.current) {
       setProfileVersion((v) => v + 1); // edited, merged or deleted elsewhere: refresh the open card
     }
@@ -144,6 +148,7 @@ export default function PatientView() {
       {camError && <CameraErrorCard message={camError} />}
 
       <div className="absolute inset-x-0 bottom-0 flex flex-col items-center gap-6 p-8">
+        <SpokenCaption spoken={spoken} />
         {card && <NameCard name={card.name} relationship={card.relationship} />}
         <WhoButton onClick={replay} />
       </div>
