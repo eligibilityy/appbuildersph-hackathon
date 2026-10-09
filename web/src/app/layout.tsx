@@ -1,7 +1,13 @@
 import type { Metadata } from "next";
+// Open Runde, bundled from npm (@fontsource) — no Google Fonts or CDN; works with Wi-Fi off.
+import "@fontsource/open-runde/400.css";
+import "@fontsource/open-runde/500.css";
+import "@fontsource/open-runde/600.css";
+import "@fontsource/open-runde/700.css";
 import "./globals.css";
+import { Toaster } from "@/components/ui/sonner";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
-// System fonts only — no next/font/google or any remote font (must work with Wi-Fi off).
 export const metadata: Metadata = {
   title: "Memory Aid",
   description: "On-device face memory aid",
@@ -14,7 +20,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className="antialiased">{children}</body>
+      <body>
+        <TooltipProvider>{children}</TooltipProvider>
+        <Toaster position="top-center" theme="light" />
+      </body>
     </html>
   );
 }
