@@ -105,6 +105,29 @@ class VisitLifecycleTests(unittest.TestCase):
         with patch.object(visits, "humanized_elapsed", return_value="1 hour"):
             self.assertEqual(visits.brief_text(person_id), "This is Miguel, your grandson. You last saw Miguel 1 hour ago.")
 
+    def test_brief_ends_with_the_latest_summary(self):
+        person_id = people.create_person("Miguel", "grandson")
+        with db.connect() as c:
+            c.execute(
+                "INSERT INTO visits (person_id, started_at, ended_at, summary, processed) VALUES (?, ?, ?, ?, 1)",
+                (person_id, "2026-10-08T09:00:00+00:00", "2026-10-08T09:30:00+00:00", "Miguel visited for lunch."),
+            )
+            c.execute(
+                "INSERT INTO visits (person_id, started_at, ended_at, summary, processed) VALUES (?, ?, ?, ?, 1)",
+                (person_id, "2026-10-09T09:00:00+00:00", "2026-10-09T09:30:00+00:00", "Miguel just started a new job in BGC"),
+            )
+            # Latest visit had nothing worth remembering: the brief still uses the last real summary.
+            c.execute(
+                "INSERT INTO visits (person_id, started_at, ended_at, summary, processed) VALUES (?, ?, ?, NULL, 1)",
+                (person_id, "2026-10-09T10:00:00+00:00", "2026-10-09T10:05:00+00:00"),
+            )
+        with patch.object(visits, "humanized_elapsed", return_value="5 minutes"):
+            text = visits.brief_text(person_id)
+        self.assertEqual(
+            text,
+            "This is Miguel, your grandson. You last saw Miguel 5 minutes ago. Miguel just started a new job in BGC.",
+        )
+
     def test_elapsed_time_formatting(self):
         now = visits.datetime(2026, 10, 9, 10, 5, tzinfo=visits.timezone.utc)
         self.assertEqual(visits.humanized_elapsed("2026-10-09T10:00:00+00:00", now), "5 minutes")
