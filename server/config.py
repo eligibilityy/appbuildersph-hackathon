@@ -90,6 +90,8 @@ WHISPER_LANGUAGE = None          # pin to "en" if detection flips around
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3:4b")  # fallback: "qwen3:1.7b"
 OLLAMA_OPTIONS = {"num_ctx": 4096}
 OLLAMA_KEEP_ALIVE = -1
+OLLAMA_HOST = "http://127.0.0.1:11434"  # always local; never a remote Ollama
+MEMORY_MIN_WORDS = 6            # shorter transcripts are skipped (nothing worth remembering)
 
 # --- TTS (CPU) ---
 PIPER_VOICE = MODELS_DIR / "en_US-lessac-medium.onnx"
