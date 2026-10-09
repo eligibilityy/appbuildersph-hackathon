@@ -29,7 +29,8 @@ export type ServerEvent =
   | { type: "visit_end"; visit_id: number; person_id: number }
   | { type: "speak"; text: string; audio_url: string }
   | { type: "transcript"; visit_id: number; text: string }
-  | { type: "memory_updated"; person_id: number };
+  | { type: "memory_updated"; person_id: number }
+  | { type: "appearance_updated"; person_id: number };
 
 export type Person = {
   id: number;
@@ -38,7 +39,10 @@ export type Person = {
   notes: string | null;
   is_unknown: number;
   name_source: string | null;
-  created_at: string;
+  created_at: string | null;
+  registered_at: string | null;
+  first_seen_at: string | null;
+  last_seen_at: string | null;
   last_seen?: string | null;
   visit_count?: number;
 };
