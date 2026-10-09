@@ -115,6 +115,13 @@ def main():
 
         check("thumbnail saved", httpx.get(f"{BASE}/thumbs/{tom_id}.jpg").status_code == 200)
 
+        r = httpx.post(f"{BASE}/enroll", data={"name": "Thomas"}, files=files, timeout=60)
+        check("enrolling the same face again is refused (409, names Tom)",
+              r.status_code == 409 and r.json()["detail"]["candidates"][0]["id"] == tom_id, r.text)
+        r = httpx.post(f"{BASE}/enroll/check", files={"image": ("f.jpg", tom_jpg, "image/jpeg")}, timeout=60)
+        check("enroll/check finds one usable face that is already saved",
+              r.status_code == 200 and r.json()["ok"] and r.json()["match"]["id"] == tom_id, r.text)
+
         print("Live recognition (/ws)")
 
         async def live():
@@ -135,7 +142,10 @@ def main():
 
                 await ws.send(b"\x00\x00" * 1600)  # audio chunk: accepted
                 await ws.send(json.dumps({"type": "replay_brief"}))
-                await send_frames(ws, blank_jpg, 1)  # connection still alive
+                await ws.send("not json")
+                await ws.send(json.dumps({"type": "frame"}))  # malformed frame: ignored, not fatal
+                faces = await send_frames(ws, blank_jpg, 1)
+                check("connection survives malformed messages", faces == [], faces)
 
         asyncio.run(live())
 

@@ -10,6 +10,13 @@
 
 Prints same-person vs different-person similarity scores, error rates per threshold, and the
 hardest same-person pairs (e.g. glasses vs no glasses) so you can see what breaks.
+
+Glasses: put "glasses" in the file name of photos WITH glasses (e.g. glasses_straight.jpg; "noglasses" /
+"no_glasses" counts as without). The script then also reports
+  - photos where NO face was detected, per condition (glasses often lower the detector's confidence)
+  - same-person scores for plain<->plain, glasses<->glasses and plain<->glasses
+  - a gallery simulation like the live app: enroll each person from one condition, probe with the other,
+    decide with MATCH_THRESHOLD + MATCH_MARGIN (best person vs 2nd-best) -> correct / unsure / WRONG person
 """
 import argparse
 import itertools
@@ -24,6 +31,36 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import config  # noqa: E402
 
 EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
+
+
+def condition(filename: str) -> str:
+    n = filename.lower().replace("-", "").replace("_", "").replace(" ", "")
+    return "glasses" if "glasses" in n and "noglasses" not in n and "withoutglasses" not in n else "plain"
+
+
+def simulate(E, labels, conds, enroll_cond, probe_cond):
+    """Enroll every person from `enroll_cond` photos, probe with their `probe_cond` photos.
+    Returns (correct, unsure, wrong, n) using the same rule as the live tracker (single frame)."""
+    people = sorted(set(labels))
+    gallery = {p: [i for i in range(len(labels)) if labels[i] == p and conds[i] == enroll_cond] for p in people}
+    gallery = {p: idx for p, idx in gallery.items() if idx}
+    correct = unsure = wrong = n = 0
+    for i in range(len(labels)):
+        if conds[i] != probe_cond or labels[i] not in gallery:
+            continue
+        scores = sorted(((max(float(E[i] @ E[j]) for j in idx if j != i), p)
+                         for p, idx in gallery.items() if any(j != i for j in idx)), reverse=True)
+        if not scores:
+            continue
+        n += 1
+        best, who = scores[0]
+        second = scores[1][0] if len(scores) > 1 else 0.0
+        if best >= config.MATCH_THRESHOLD and best - second >= config.MATCH_MARGIN:
+            correct += who == labels[i]
+            wrong += who != labels[i]
+        else:
+            unsure += 1
+    return correct, unsure, wrong, n
 
 
 def main():
@@ -43,7 +80,11 @@ def main():
     app = FaceAnalysis(name=args.model, providers=config.FACE_PROVIDERS, allowed_modules=["detection", "recognition"])
     app.prepare(ctx_id=-1, det_size=config.FACE_DET_SIZE)
 
-    embs, labels, names, times = [], [], [], []
+    from faces import quality
+
+    embs, labels, names, conds, times = [], [], [], [], []
+    missed = {"plain": [0, 0], "glasses": [0, 0]}  # [no face detected, total]
+    low_quality = []
     for person in people:
         for img_path in sorted(person.iterdir()):
             if img_path.suffix.lower() not in EXTS:
@@ -54,15 +95,23 @@ def main():
                 continue
             if img.shape[1] > 640:  # same size the live app uses
                 img = cv2.resize(img, (640, int(img.shape[0] * 640 / img.shape[1])))
+            cond = condition(img_path.name)
+            missed[cond][1] += 1
             t = time.perf_counter()
             faces = app.get(img)
             times.append((time.perf_counter() - t) * 1000)
+            if len(faces) == 0:
+                missed[cond][0] += 1
             if len(faces) != 1:
                 print(f"  skip {person.name}/{img_path.name}: {len(faces)} faces")
                 continue
+            reason = quality.check(faces[0], img)
+            if reason:
+                low_quality.append(f"{person.name}/{img_path.name}: {reason}")
             embs.append(faces[0].normed_embedding.astype(np.float32))
             labels.append(person.name)
             names.append(f"{person.name}/{img_path.name}")
+            conds.append(cond)
 
     if len(embs) < 3:
         print("Not enough usable photos.")
@@ -94,7 +143,26 @@ def main():
     print("\nMost similar different-person pairs (risk of mix-ups):")
     for s, i, j in sorted(impostor, reverse=True)[:5]:
         print(f"  {s:.3f}  {names[i]}  <->  {names[j]}")
-    print("\nNote: single photos are a worst case - the live app also confirms over 5 frames.")
+
+    if low_quality:
+        print(f"\nPhotos the live quality gate would skip ({len(low_quality)}):")
+        for line in low_quality[:10]:
+            print(f"  {line}")
+
+    if missed["glasses"][1]:
+        print(f"\nGlasses (det_size {config.FACE_DET_SIZE[0]}):")
+        for c in ("plain", "glasses"):
+            print(f"  no face detected: {missed[c][0]}/{missed[c][1]} {c} photos")
+        for a, b in (("plain", "plain"), ("glasses", "glasses"), ("plain", "glasses")):
+            s = np.array([sc for sc, i, j in genuine if {conds[i], conds[j]} == {a, b}])
+            if len(s):
+                print(f"  same person, {a:7s} <-> {b:7s} ({len(s):3d} pairs): min {s.min():.3f}  mean {s.mean():.3f}")
+        print(f"  gallery simulation (threshold {config.MATCH_THRESHOLD}, margin {config.MATCH_MARGIN}, single photo):")
+        for enroll_c, probe_c in (("plain", "glasses"), ("glasses", "plain"), ("plain", "plain"), ("glasses", "glasses")):
+            ok, unsure, wrong, n = simulate(E, labels, conds, enroll_c, probe_c)
+            if n:
+                print(f"    enrolled {enroll_c:7s} -> seen {probe_c:7s}: {ok}/{n} correct, {unsure} unsure, {wrong} WRONG person")
+    print("\nNote: single photos are a worst case - the live app also averages and confirms over 5 frames.")
 
 
 if __name__ == "__main__":
