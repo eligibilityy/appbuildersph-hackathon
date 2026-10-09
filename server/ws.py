@@ -57,12 +57,17 @@ async def ws_endpoint(ws: WebSocket):
             if msg["type"] == "websocket.disconnect":
                 break
             if msg.get("text") is not None:
-                data = json.loads(msg["text"])
-                if data.get("type") == "frame":
-                    b64 = data["jpeg"].split(",", 1)[-1]  # tolerate data: URLs
-                    latest["jpeg"] = base64.b64decode(b64)
-                    have_frame.set()
-                elif data.get("type") == "replay_brief" and config.FEATURES["visits"]:
+                try:
+                    data = json.loads(msg["text"])
+                    if data.get("type") == "frame":
+                        b64 = data["jpeg"].split(",", 1)[-1]  # tolerate data: URLs
+                        latest["jpeg"] = base64.b64decode(b64)
+                        have_frame.set()
+                        continue
+                except (ValueError, KeyError, TypeError, AttributeError) as e:
+                    print(f"[ws] ignored malformed message: {e!r}")  # don't drop the whole connection
+                    continue
+                if isinstance(data, dict) and data.get("type") == "replay_brief" and config.FEATURES["visits"]:
                     await _broadcast_all(await asyncio.to_thread(visits.replay_brief))
             elif msg.get("bytes") is not None and config.FEATURES["audio"]:
                 audio.feed(msg["bytes"])
