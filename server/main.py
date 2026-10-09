@@ -125,7 +125,7 @@ async def enroll(
     if not name:
         raise HTTPException(400, "name is required")
     if not 3 <= len(images) <= 5:
-        raise HTTPException(400, f"send 3–5 images (got {len(images)})")
+        raise HTTPException(400, f"send 3 to 5 images (got {len(images)})")
     try:
         imgs = [decode_jpeg(await f.read()) for f in images]
         pid = await asyncio.to_thread(engine.enroll, name, relationship.strip() or None, imgs)
