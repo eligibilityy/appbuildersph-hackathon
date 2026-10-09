@@ -124,6 +124,8 @@ def main():
         r = httpx.post(f"{BASE}/enroll/check", files={"image": ("f.jpg", tom_jpg, "image/jpeg")}, timeout=60)
         check("enroll/check finds one usable face that is already saved",
               r.status_code == 200 and r.json()["ok"] and r.json()["match"]["id"] == tom_id, r.text)
+        check("enroll/check reports head pose from landmarks (for auto-capture)",
+              r.status_code == 200 and isinstance(r.json()["pose"]["yaw"], float) and r.json()["frame"] == [640, 480], r.text)
 
         print("Live recognition (/ws)")
 
