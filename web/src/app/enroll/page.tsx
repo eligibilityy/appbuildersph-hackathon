@@ -1,9 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { useRef, useState } from "react";
-import { dataUrlToBlob, grabFrame, useCamera } from "@/lib/camera";
+import { useState } from "react";
+import { AlertCircle, ShieldCheck } from "lucide-react";
+import { toast } from "sonner";
+import AppHeader from "@/components/app/AppHeader";
+import CameraCapture from "@/components/CameraCapture";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
 import { api } from "@/lib/api";
+import { dataUrlToBlob } from "@/lib/camera";
+import { cn } from "@/lib/utils";
 
 const STEPS = [
   "Look straight at the camera",
@@ -12,136 +22,150 @@ const STEPS = [
   "Tilt your chin up a little",
   "Tilt your chin down a little",
 ];
+const MIN_PHOTOS = 3;
 
-const RELATIONSHIPS = ["son", "daughter", "grandson", "granddaughter", "husband", "wife", "brother", "sister",
-  "niece", "nephew", "friend", "neighbor", "caregiver", "doctor", "nurse"];
+const RELATIONSHIPS = ["grandson", "granddaughter", "son", "daughter", "wife", "husband", "friend", "caregiver"];
 
 export default function EnrollPage() {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const grabRef = useRef<HTMLCanvasElement>(null);
-  const camError = useCamera(videoRef);
-
   const [name, setName] = useState("");
   const [relationship, setRelationship] = useState("");
-  const [shots, setShots] = useState<string[]>([]);
-  const [status, setStatus] = useState<{ kind: "idle" | "saving" | "ok" | "error"; msg?: string }>({ kind: "idle" });
+  const [photos, setPhotos] = useState<string[]>([]);
+  const [resetKey, setResetKey] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const step = Math.min(shots.length, STEPS.length - 1);
-  const done = shots.length >= STEPS.length;
+  const canSave = name.trim().length > 0 && photos.length >= MIN_PHOTOS && !saving;
 
-  function capture() {
-    if (!videoRef.current || !grabRef.current || done) return;
-    const f = grabFrame(videoRef.current, grabRef.current, 640, 0.9);
-    if (f) setShots((s) => [...s, f.dataUrl]);
-  }
-
-  function reset() {
-    setShots([]);
-    setStatus({ kind: "idle" });
-  }
-
-  async function save() {
-    if (!name.trim()) return setStatus({ kind: "error", msg: "Please enter a name." });
-    if (shots.length < 3) return setStatus({ kind: "error", msg: "Capture at least 3 photos." });
-    setStatus({ kind: "saving" });
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    if (!name.trim()) return setError("Enter a name.");
+    if (photos.length < MIN_PHOTOS) return setError(`Take at least ${MIN_PHOTOS} photos.`);
+    setSaving(true);
+    setError(null);
     try {
-      const person = await api.enroll(name.trim(), relationship.trim(), shots.map(dataUrlToBlob));
-      setStatus({ kind: "ok", msg: `Saved ${person.name}.` });
-      setShots([]);
+      const person = await api.enroll(name.trim(), relationship.trim(), photos.map(dataUrlToBlob));
+      toast.success(`${person.name} was added`, {
+        description: "They'll be recognized on the patient view.",
+        action: { label: "View people", onClick: () => (window.location.href = "/caregiver") },
+      });
       setName("");
       setRelationship("");
-    } catch (e) {
-      setStatus({ kind: "error", msg: e instanceof Error ? e.message : String(e) });
+      setResetKey((k) => k + 1);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(msg);
+      toast.error("Couldn't save", { description: msg });
+    } finally {
+      setSaving(false);
     }
   }
 
   return (
-    <main className="mx-auto max-w-5xl p-6 text-neutral-900">
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Add a person</h1>
-        <nav className="flex gap-4 text-blue-700 underline">
-          <Link href="/">Patient view</Link>
-          <Link href="/caregiver">Caregiver</Link>
-        </nav>
-      </div>
-
-      <div className="grid gap-6 md:grid-cols-[1fr_320px]">
-        <section>
-          <div className="relative overflow-hidden rounded-2xl bg-black">
-            {/* Mirrored preview so the person can position themselves; captured frames are not mirrored. */}
-            <video ref={videoRef} className="aspect-video w-full -scale-x-100 object-cover" muted playsInline />
-            <div className="absolute inset-x-0 top-0 bg-black/60 p-4 text-center text-2xl font-semibold text-white">
-              {done ? "All photos captured" : `${shots.length + 1}/${STEPS.length}: ${STEPS[step]}`}
-            </div>
-          </div>
-          {camError && <p className="mt-2 text-red-700">Camera unavailable: {camError}</p>}
-          <canvas ref={grabRef} className="hidden" />
-
-          <div className="mt-4 flex gap-3">
-            <button
-              onClick={capture}
-              disabled={done}
-              className="rounded-xl bg-blue-600 px-6 py-3 text-lg font-semibold text-white disabled:opacity-40"
-            >
-              Capture photo
-            </button>
-            <button onClick={reset} className="rounded-xl border px-6 py-3 text-lg">
-              Start over
-            </button>
-          </div>
-
-          <div className="mt-4 grid grid-cols-5 gap-2">
-            {STEPS.map((_, i) => (
-              <div key={i} className="aspect-square overflow-hidden rounded-lg bg-neutral-200">
-                {shots[i] && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={shots[i]} alt={`shot ${i + 1}`} className="h-full w-full object-cover" />
-                )}
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <section className="flex flex-col gap-4">
-          <label className="flex flex-col gap-1">
-            <span className="font-medium">Name</span>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="rounded-lg border px-3 py-2 text-lg"
-              placeholder="Miguel"
-            />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="font-medium">Relationship to the patient</span>
-            <input
-              value={relationship}
-              onChange={(e) => setRelationship(e.target.value)}
-              list="relationships"
-              className="rounded-lg border px-3 py-2 text-lg"
-              placeholder="grandson"
-            />
-            <datalist id="relationships">
-              {RELATIONSHIPS.map((r) => (
-                <option key={r} value={r} />
-              ))}
-            </datalist>
-          </label>
-          <button
-            onClick={save}
-            disabled={status.kind === "saving"}
-            className="rounded-xl bg-green-600 px-6 py-3 text-lg font-semibold text-white disabled:opacity-40"
-          >
-            {status.kind === "saving" ? "Saving…" : "Save person"}
-          </button>
-          {status.msg && (
-            <p className={status.kind === "error" ? "text-red-700" : "text-green-700"}>{status.msg}</p>
-          )}
-          <p className="text-sm text-neutral-600">
-            One person in frame at a time. Good, even lighting helps. Photos stay on this computer.
+    <>
+      <AppHeader />
+      <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+        <div className="mb-6">
+          <h1 className="text-large-title">Add a person</h1>
+          <p className="mt-1 text-body text-muted-foreground">
+            Take {STEPS.length} photos from slightly different angles, one person in frame.
           </p>
-        </section>
-      </div>
-    </main>
+        </div>
+
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+          <Card className="p-4 sm:p-5">
+            <CameraCapture steps={STEPS} onChange={setPhotos} resetKey={resetKey} />
+          </Card>
+
+          <Card className="h-fit">
+            <CardContent>
+              <form onSubmit={save} className="flex flex-col gap-5">
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="name" className="text-footnote font-medium text-muted-foreground">
+                    Name
+                  </Label>
+                  <Input
+                    id="name"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="Miguel"
+                    autoComplete="off"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="relationship" className="text-footnote font-medium text-muted-foreground">
+                    Relationship to the patient
+                  </Label>
+                  <Input
+                    id="relationship"
+                    value={relationship}
+                    onChange={(e) => setRelationship(e.target.value)}
+                    placeholder="grandson"
+                    autoComplete="off"
+                  />
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {RELATIONSHIPS.map((r) => (
+                      <button
+                        key={r}
+                        type="button"
+                        onClick={() => setRelationship(r)}
+                        className={cn(
+                          "h-8 rounded-full border px-3 text-footnote font-medium transition-colors duration-150 outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+                          relationship === r
+                            ? "border-primary bg-primary/10 text-primary"
+                            : "bg-card text-muted-foreground hover:bg-muted hover:text-foreground",
+                        )}
+                      >
+                        {r}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <Separator />
+
+                <div className="flex items-center justify-between text-body">
+                  <span className="text-muted-foreground">Photos</span>
+                  <span className={cn("font-medium", photos.length >= MIN_PHOTOS ? "text-success" : "text-foreground")}>
+                    {photos.length} of {STEPS.length}
+                    {photos.length < MIN_PHOTOS && (
+                      <span className="text-muted-foreground"> · {MIN_PHOTOS} needed</span>
+                    )}
+                  </span>
+                </div>
+
+                {error && (
+                  <p
+                    role="alert"
+                    className="flex items-start gap-2 rounded-lg bg-destructive/10 p-3 text-body text-destructive"
+                  >
+                    <AlertCircle className="mt-0.5 size-4 shrink-0" />
+                    {error}
+                  </p>
+                )}
+
+                <Button type="submit" size="lg" disabled={!canSave} className="w-full">
+                  {saving ? "Saving…" : "Save person"}
+                </Button>
+
+                <p className="flex items-start gap-2 text-footnote text-muted-foreground">
+                  <ShieldCheck className="mt-0.5 size-4 shrink-0 text-success" />
+                  Photos stay on this computer. Nothing is uploaded.
+                </p>
+              </form>
+            </CardContent>
+          </Card>
+        </div>
+
+        <p className="mt-6 text-footnote text-muted-foreground">
+          Already added someone who now looks different (glasses, new haircut)? Use <strong>Add photos</strong> on their
+          card in{" "}
+          <Link href="/caregiver" className="font-medium text-primary hover:underline">
+            People
+          </Link>
+          .
+        </p>
+      </main>
+    </>
   );
 }
