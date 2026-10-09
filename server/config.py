@@ -81,7 +81,7 @@ VISIT_END_SECONDS = float(os.environ.get("VISIT_END_SECONDS", 30))
 MONITORING_GAP_SECONDS = float(os.environ.get("MONITORING_GAP_SECONDS", 5))
 
 # --- STT (CPU) ---
-WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "small")  # CPU-only fallback: "base"
+WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "base")  # CPU-only multilingual model
 WHISPER_DEVICE = "cpu"
 WHISPER_COMPUTE_TYPE = "int8"
 WHISPER_LANGUAGE = None          # pin to "en" if detection flips around
