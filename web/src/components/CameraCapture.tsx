@@ -122,7 +122,7 @@ export default function CameraCapture({ steps, onChange, resetKey = 0, className
       {/* Shots — tap the x to retake one */}
       <div
         className="grid max-w-[480px] gap-2"
-        style={{ gridTemplateColumns: `repeat(${steps.length}, minmax(0, 1fr))` }}
+        style={{ gridTemplateColumns: `repeat(${steps.length}, minmax(0, 96px))` }}
       >
         {slots.map((s, i) => (
           <div

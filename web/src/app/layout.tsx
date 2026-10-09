@@ -22,7 +22,8 @@ export default function RootLayout({
     <html lang="en">
       <body>
         <TooltipProvider>{children}</TooltipProvider>
-        <Toaster position="top-center" theme="light" />
+        {/* offset keeps toasts below the 56px header */}
+        <Toaster position="top-center" theme="light" offset={72} />
       </body>
     </html>
   );
