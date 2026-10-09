@@ -1,4 +1,4 @@
-<img src="web\public\crouie.png" alt="Crouie Logo" width="150">
+<img src="web/public/crouie.png" alt="Crouie Logo" width="150">
 
 # Crouie
 
