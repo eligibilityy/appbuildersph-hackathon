@@ -6,19 +6,21 @@ A camera recognizes the people who visit a patient with dementia, listens to the
 
 **Everything runs on the laptop. The app works with Wi-Fi off.** Built for the AppBuildersPH Hackathon 2026 (theme: Local AI).
 
-> **Teammates:** the full spec (architecture, protocol, schema, rules) is in [`CLAUDE.md`](CLAUDE.md). This README is the "how do I run and work on it" guide.
+> **Teammates:** who does what, the feature order and the timetable are in [`docs/TEAM_PLAN.md`](docs/TEAM_PLAN.md). The full spec (architecture, protocol, schema, rules) is in [`CLAUDE.md`](CLAUDE.md). This README is the "how do I run and work on it" guide.
 
 ---
 
 ## Status
 
-| # | Milestone | State |
-|---|---|---|
-| 1 | Webcam → server → face recognition → names on screen; enrollment; SQLite | ✅ done, server tested end to end |
-| 2 | Mic → Whisper transcripts per visit; Piper speaks the name on arrival | ⏳ next |
-| 3 | Ollama memory extraction; "last seen"; full spoken brief; offline test | ⏳ |
-| 4 | Caregiver dashboard (timeline, facts, live captions), replay button polish | ⏳ |
-| 5 | README final (measured performance, disclosures), demo video | ⏳ |
+| Feature | State |
+|---|---|
+| Live face recognition, enrollment, SQLite (Milestone 1) | ✅ done, tested end to end |
+| Code split by feature, with feature switches + smoke test | ✅ done |
+| Add photos to a person / merge Unknown into a person (server) | ✅ done (UI in progress) |
+| **Core:** robust recognition (quality gate, glasses/hair), visits + "last seen", speak name on arrival | ⏳ block 1 |
+| Whisper transcripts, full spoken brief, caregiver timeline | ⏳ block 2 |
+| Ollama/Qwen memory extraction, live captions | ⏳ block 3 |
+| README final (measured performance, disclosures), demo video | ⏳ |
 
 ---
 
@@ -235,29 +237,68 @@ To start from a clean slate, stop the server and delete the `server/data/` folde
 
 ## Project layout
 
+The code is split **one module per feature**, so each teammate works in their own files. Features marked *stub* already have their final function signatures, and each one's docstring says what to build.
+
 ```
-CLAUDE.md          Full spec: architecture, WebSocket protocol, DB schema, rules
-README.md          This file
-.gitignore         Keeps server/data/, .venv/, node_modules/ out of git
+CLAUDE.md            Full spec: architecture, WebSocket protocol, DB schema, rules
+README.md            This file
+docs/TEAM_PLAN.md    Feature order, timetable, who owns which files, git rules
+.gitignore           Keeps server/data/, .venv/, node_modules/ out of git
 
 server/
-  main.py          FastAPI app: /ws (live frames) + REST routes
-  config.py        ALL tunable constants and model names (edit here, restart)
-  faces.py         Face detection/embedding, matching, tracking, unknown-person logic
-  db.py            SQLite schema + queries
-  requirements.txt Pinned Python dependencies
-  data/            (gitignored, auto-created) app.db, thumbs/, tts/
-  # coming next: audio.py (Whisper), memory.py (Ollama), visits.py, tts.py (Piper)
+  main.py            Wires the features together (thin)
+  config.py          ALL tunable constants, model names, feature switches
+  db.py              Shared SQLite schema + connection
+  hub.py             Connected pages + broadcast(event) to all of them
+  ws.py              /ws: frames -> faces -> visits, mic audio -> audio, "Who's this?" -> visits
+  people.py          /people CRUD + thumbnails
+  faces/             CORE: face recognition
+    engine.py          model load, detect/embed, gallery + matching, enroll / add photos / merge
+    tracker.py         follows faces across frames, confirms identity, creates "Unknown #N"
+    quality.py         is this face good enough to trust? (stub)
+    routes.py          /enroll, /people/{id}/photos, /people/{id}/merge
+  visits.py          visit start/end, "last seen", spoken brief text (stub)
+  tts.py             Piper text-to-speech (stub)
+  audio.py           mic audio -> Whisper transcripts (stub)
+  memory.py          Ollama summaries + facts (stub)
+  tools/
+    smoke_test.py      end-to-end test on a throwaway server (run before every push)
+    eval_faces.py      measures same-person vs different-person scores, to pick MATCH_THRESHOLD
+  requirements.txt   Pinned Python dependencies
+  data/              (gitignored, auto-created) app.db, thumbs/, tts/, eval/
 
-web/
-  src/app/page.tsx            Patient view (/)
-  src/app/enroll/page.tsx     Enrollment (/enroll)
-  src/app/caregiver/page.tsx  Caregiver dashboard (/caregiver)
-  src/lib/server.ts           Server URL, WebSocket hook with auto-reconnect, shared types
-  src/lib/camera.ts           Webcam hook + frame grabbing
+web/src/
+  app/page.tsx                 Patient view (/)
+  app/enroll/page.tsx          Enrollment (/enroll)
+  app/caregiver/page.tsx       Caregiver dashboard (/caregiver)
+  components/FaceOverlay.tsx   Video + face boxes and names
+  components/NameCard.tsx      Big name card
+  components/caregiver/PersonCard.tsx   One person on the caregiver page
+  lib/api.ts                   Typed REST calls (people, enroll, addPhotos, merge, ...)
+  lib/server.ts                Server URL, WebSocket hook with auto-reconnect, shared types
+  lib/camera.ts                Webcam hook + frame grabbing
+  lib/audio.ts                 Plays the spoken brief; mic capture goes here later
 
-models/            Piper voice files go here (Milestone 2)
+models/              Piper voice files go here
 ```
+
+### Feature switches
+
+Turn off features a laptop doesn't need. A disabled feature never loads its model. Faces are always on.
+
+```powershell
+$env:FEATURE_AUDIO = "0"; $env:FEATURE_MEMORY = "0"   # also FEATURE_TTS, FEATURE_VISITS
+.\.venv\Scripts\python main.py
+```
+`GET /health` lists which features are on.
+
+### Smoke test (run before every push)
+
+```powershell
+cd server
+.\.venv\Scripts\python tools\smoke_test.py      # macOS/Linux: .venv/bin/python tools/smoke_test.py
+```
+It starts its own server on port 8765 with a throwaway data folder, so your real `server/data` is untouched. It uses InsightFace's bundled sample photos, so no real faces are involved. It checks enrollment, live recognition, Unknown creation, add photos, merge, edit, delete, and restart persistence. Expect `ALL PASSED`.
 
 ### Server API (so far)
 
@@ -266,6 +307,8 @@ models/            Piper voice files go here (Milestone 2)
 | WS | `/ws` | Browser sends `{type:"frame", jpeg}`; server replies `{type:"faces", faces:[...]}` and broadcasts `memory_updated` |
 | GET | `/health` | Server status, number of people and embeddings |
 | POST | `/enroll` | multipart: `name`, `relationship`, 3–5 `images` (each must contain exactly one face) |
+| POST | `/people/{id}/photos` | multipart: 1–5 `images`. Adds photos to someone already known (e.g. now wearing glasses) |
+| POST | `/people/{id}/merge` | JSON `{into_person_id}`. "Unknown #3 is actually Miguel": moves their faces, visits and facts, then deletes the Unknown |
 | GET | `/people` · `/people/{id}` | List people / one person with visits + facts |
 | PATCH | `/people/{id}` | JSON `{name, relationship, notes}`; naming an unknown makes them known |
 | DELETE | `/people/{id}` | Delete a person and everything about them |
@@ -303,10 +346,12 @@ The full message protocol for upcoming milestones is in `CLAUDE.md`.
 ```bash
 git pull
 git checkout -b your-feature     # e.g. audio-whisper, caregiver-timeline
-# ...work, test...
+# ...work in the files you own (see docs/TEAM_PLAN.md)...
+cd server && .venv/Scripts/python tools/smoke_test.py   # must say ALL PASSED
+cd ../web && npm run build                               # if you touched the web app
 git add <files>
 git commit -m "Add Whisper transcription per visit"
-git push -u origin your-feature  # then open a PR, or merge to main after a quick check
+git push -u origin your-feature  # then open a PR; the lead merges into main
 ```
 
 ---

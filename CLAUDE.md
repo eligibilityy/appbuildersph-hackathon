@@ -181,20 +181,30 @@ Prompt rules: only use what was said; never invent; null when unsure. Hint for F
 
 ## Repo layout
 
+One module per feature, each with one owner (see `docs/TEAM_PLAN.md`). Keep new code inside the feature it belongs to, and don't change a stub's function signature without telling the lead.
+
 ```
-/web            Next.js app (pages: /, /caregiver, /enroll)
+/web/src
+  app/            pages: / (patient), /enroll, /caregiver — keep thin
+  components/     FaceOverlay, NameCard, caregiver/PersonCard
+  lib/            api.ts (typed REST), server.ts (WS hook + types), camera.ts, audio.ts
 /server
-  main.py       FastAPI app, /ws, REST routes
-  config.py     all model names + constants
-  faces.py      InsightFace load, detect/embed, matching, tracking
-  visits.py     visit lifecycle, brief text
-  audio.py      PCM buffering, Whisper transcription
-  memory.py     Ollama extraction, worker queue
-  tts.py        Piper synthesis → server/data/tts/*.wav
-  db.py         SQLite schema + queries
-  data/         (gitignored) app.db, thumbs/, tts/
-/models         Piper voice files (+ README notes on InsightFace/Whisper cache)
-README.md       setup, offline prep, hardware, disclosures
+  main.py         wires features together (thin)
+  config.py       all model names + constants + FEATURES switches (FEATURE_<NAME>=0)
+  db.py           shared SQLite schema + connect(); queries live in each feature module
+  hub.py          connected clients, broadcast() / broadcast_threadsafe(), shared FaceEngine
+  ws.py           /ws dispatcher: frame → faces → visits; binary → audio; replay_brief → visits
+  people.py       /people CRUD, /thumbs
+  faces/          engine.py (model, gallery, enroll/add photos/merge), tracker.py, quality.py, routes.py
+  visits.py       visit lifecycle, brief text
+  audio.py        PCM buffering, Whisper transcription
+  memory.py       Ollama extraction, worker queue
+  tts.py          Piper synthesis → server/data/tts/*.wav
+  tools/          smoke_test.py (run before every push), eval_faces.py (threshold tuning)
+  data/           (gitignored) app.db, thumbs/, tts/, eval/
+/models           Piper voice files (+ README notes on InsightFace/Whisper cache)
+/docs/TEAM_PLAN.md  feature order, timetable, file ownership
+README.md         setup, offline prep, hardware, disclosures
 ```
 
 ## Setup notes
