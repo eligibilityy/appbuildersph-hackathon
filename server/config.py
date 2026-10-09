@@ -82,6 +82,8 @@ MONITORING_GAP_SECONDS = float(os.environ.get("MONITORING_GAP_SECONDS", 5))
 
 # --- STT (CPU) ---
 WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "base")  # CPU-only multilingual model
+# Live captions: transcribe every N seconds while a visit is open (5 s chunk: 0.8-1.7 s on the dev laptop's CPU).
+TRANSCRIBE_EVERY_SECONDS = float(os.environ.get("TRANSCRIBE_EVERY_SECONDS", 5))
 WHISPER_DEVICE = "cpu"
 WHISPER_COMPUTE_TYPE = "int8"
 # "tl" (Tagalog) handles Tagalog, Taglish and English: tested on the dev laptop, English stayed word-for-word

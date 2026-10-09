@@ -84,7 +84,7 @@ class AudioFlushTests(unittest.TestCase):
         release = threading.Event()
         whisper = FakeWhisper("I just started a new job in BGC.", release)
         with mock.patch.object(audio, "_get_model", return_value=whisper):
-            for _ in range(12):  # reaches the interval: a live-caption job starts in the background
+            for _ in range(12):  # passes the 5 s interval: a live-caption job starts in the background
                 audio.feed(SECOND)
             self.end_visit()
             done = threading.Event()
@@ -95,7 +95,37 @@ class AudioFlushTests(unittest.TestCase):
             release.set()
             t.join(5)
         self.assertTrue(done.is_set())
-        self.assertEqual(transcript(self.vid), "I just started a new job in BGC.")
+        self.assertTrue(transcript(self.vid).startswith("I just started a new job in BGC."))
+        self.assertAlmostEqual(sum(whisper.calls), 12.0, places=2)  # every second transcribed exactly once
+        self.assertEqual(len(audio._buffer), 0)
+
+    def test_live_caption_chunks_are_cut_at_a_pause(self):
+        import numpy as np
+
+        loud = (np.sin(np.arange(16_000 * 5) / 3) * 8000).astype("<i2")
+        loud[16_000 * 4 : 16_000 * 4 + 1600] = 0  # a 100 ms pause 1 s before the end
+        cut = audio.quiet_split(loud.tobytes())
+        self.assertTrue(16_000 * 4 * 2 <= cut <= (16_000 * 4 + 1600) * 2, cut)
+        self.assertEqual(cut % 2, 0)  # never splits a 16-bit sample
+
+        whisper = FakeWhisper("Hi Lola")
+        with mock.patch.object(audio, "_get_model", return_value=whisper):
+            for i in range(0, len(loud) * 2, 3200):
+                audio.feed(loud.tobytes()[i : i + 3200])
+            for _ in range(50):  # the background job is quick with the fake model
+                if not audio._worker_active:
+                    break
+                time.sleep(0.02)
+        self.assertEqual(len(whisper.calls), 1)
+        self.assertAlmostEqual(whisper.calls[0], cut / 32_000, places=3)  # chunk ends in the pause
+        self.assertGreater(len(audio._buffer), 0)  # the rest waits for the next chunk
+        self.assertIn(self.vid, audio._buffer_visits)
+
+    def test_chunk_edge_dots_are_dropped_but_real_ones_kept(self):
+        self.assertEqual(audio._trim_chunk_dots("I just started a new job in..."), "I just started a new job in")
+        self.assertEqual(audio._trim_chunk_dots("...BGC. Good afternoon."), "BGC. Good afternoon.")
+        self.assertEqual(audio._trim_chunk_dots("…sige po…"), "sige po")
+        self.assertEqual(audio._trim_chunk_dots("Wait... what?"), "Wait... what?")
 
     def test_no_text_is_added_once_memory_has_processed_the_visit(self):
         import visits
